@@ -1,0 +1,346 @@
+import {
+  AdHocFiltersVariable,
+  EmbeddedScene,
+  SceneControlsSpacer,
+  SceneFlexItem,
+  SceneFlexLayout,
+  SceneQueryRunner,
+  SceneRefreshPicker,
+  SceneTimePicker,
+  SceneTimeRange,
+  SceneVariableSet,
+  VariableValueSelectors,
+  VizPanel,
+} from '@grafana/scenes';
+import { CLICKHOUSE_DS, COMPARISON_ATTRIBUTES } from '../../constants';
+import {
+  SLODefinition,
+  latencyTimeseriesSql,
+  errorRateTimeseriesSql,
+  complianceSql,
+  errorBudgetSql,
+} from '../../sloDefinitions';
+import {
+  SelectionState,
+  AttributeComparisonPanel,
+} from '@heatmap/shared-comparison';
+
+function buildAdHocWhere(slo: SLODefinition, adHocFilters: AdHocFiltersVariable): string {
+  const parts: string[] = [
+    `SpanAttributes['http.route'] = '${slo.route}'`,
+    `ServiceName = 'api-gateway'`,
+  ];
+
+  for (const f of adHocFilters.state.filters) {
+    if (f.operator === '=') {
+      parts.push(`SpanAttributes['${f.key}'] = '${f.value}'`);
+    } else if (f.operator === '!=') {
+      parts.push(`SpanAttributes['${f.key}'] != '${f.value}'`);
+    }
+  }
+
+  return parts.join('\n          AND ');
+}
+
+/** Raw span query for heatmap (latency SLOs) */
+function buildLatencyDrilldownSql(slo: SLODefinition, adHocFilters: AdHocFiltersVariable): string {
+  const where = buildAdHocWhere(slo, adHocFilters);
+  return `SELECT
+          Timestamp as timestamp,
+          Duration / 1000000 as duration,
+          TraceId as traceId
+        FROM otel_traces
+        WHERE $__timeFilter(Timestamp)
+          AND ${where}
+        ORDER BY Timestamp
+        LIMIT 10000`;
+}
+
+/** Aggregated error rate query for timeseries (error_rate SLOs) */
+function buildErrorRateDrilldownSql(slo: SLODefinition, adHocFilters: AdHocFiltersVariable): string {
+  const where = buildAdHocWhere(slo, adHocFilters);
+  return `SELECT
+          toStartOfInterval(Timestamp, INTERVAL 1 minute) AS time,
+          countIf(toInt32OrZero(SpanAttributes['http.status_code']) >= 500) / count() AS error_rate
+        FROM otel_traces
+        WHERE $__timeFilter(Timestamp)
+          AND ${where}
+        GROUP BY time
+        ORDER BY time`;
+}
+
+function buildDrilldownSql(slo: SLODefinition, adHocFilters: AdHocFiltersVariable): string {
+  return slo.type === 'latency'
+    ? buildLatencyDrilldownSql(slo, adHocFilters)
+    : buildErrorRateDrilldownSql(slo, adHocFilters);
+}
+
+export function detailScene(slo: SLODefinition) {
+  const timeRange = new SceneTimeRange({
+    from: `now-${slo.windowMinutes}m`,
+    to: 'now',
+  });
+
+  const adHocFilters = new AdHocFiltersVariable({
+    name: 'filters',
+    label: 'Filters',
+    datasource: CLICKHOUSE_DS,
+    applyMode: 'manual',
+    defaultKeys: COMPARISON_ATTRIBUTES.map((a) => ({ text: a, value: a })),
+    filters: [],
+  });
+
+  // --- Top row: compliance stat + error budget ---
+  const complianceQuery = new SceneQueryRunner({
+    datasource: CLICKHOUSE_DS,
+    queries: [{
+      refId: 'compliance',
+      datasource: CLICKHOUSE_DS,
+      rawSql: complianceSql(slo),
+      format: 1,
+      queryType: 'sql',
+    }],
+  });
+
+  const budgetQuery = new SceneQueryRunner({
+    datasource: CLICKHOUSE_DS,
+    queries: [{
+      refId: 'budget',
+      datasource: CLICKHOUSE_DS,
+      rawSql: errorBudgetSql(slo),
+      format: 1,
+      queryType: 'sql',
+    }],
+  });
+
+  // --- Middle row: timeseries ---
+  const tsQuery = new SceneQueryRunner({
+    datasource: CLICKHOUSE_DS,
+    queries: [{
+      refId: 'ts',
+      datasource: CLICKHOUSE_DS,
+      rawSql: slo.type === 'latency'
+        ? latencyTimeseriesSql(slo)
+        : errorRateTimeseriesSql(slo),
+      format: 1,
+      queryType: 'sql',
+    }],
+  });
+
+  const tsTitle = slo.type === 'latency'
+    ? `p99 Latency (threshold: ${slo.thresholdMs}ms)`
+    : `Error Rate (threshold: ${((slo.thresholdRate ?? 0) * 100).toFixed(1)}%)`;
+
+  // --- Bottom row: drilldown viz + comparison ---
+  const drilldownQuery = new SceneQueryRunner({
+    datasource: CLICKHOUSE_DS,
+    queries: [{
+      refId: 'drilldown',
+      datasource: CLICKHOUSE_DS,
+      rawSql: buildDrilldownSql(slo, adHocFilters),
+      format: 1,
+      queryType: 'sql',
+    }],
+    maxDataPoints: 10000,
+  });
+
+  function refreshDrilldownQuery() {
+    const newSql = buildDrilldownSql(slo, adHocFilters);
+    const current = drilldownQuery.state.queries[0];
+    if ((current as any).rawSql === newSql) {
+      return;
+    }
+    drilldownQuery.setState({
+      queries: [{ ...current, rawSql: newSql }],
+    });
+    drilldownQuery.runQueries();
+  }
+
+  const selectionState = new SelectionState();
+  const comparisonPanel = new AttributeComparisonPanel({
+    datasource: CLICKHOUSE_DS,
+    attributes: COMPARISON_ATTRIBUTES,
+  });
+
+  comparisonPanel.setAdHocVariable(adHocFilters);
+
+  // Wire selection -> comparison
+  selectionState.addActivationHandler(() => {
+    const sub = selectionState.subscribeToState((newState, prevState) => {
+      if (newState.selection !== prevState.selection) {
+        comparisonPanel.setSelection(newState.selection);
+      }
+    });
+    return () => sub.unsubscribe();
+  });
+
+  // Wire ad-hoc filter changes -> rebuild drilldown + re-run comparison
+  adHocFilters.addActivationHandler(() => {
+    const sub = adHocFilters.subscribeToState((newState, prevState) => {
+      if (newState.filters !== prevState.filters) {
+        refreshDrilldownQuery();
+        if (comparisonPanel.state.selection) {
+          comparisonPanel.setSelection(comparisonPanel.state.selection);
+        }
+      }
+    });
+    return () => sub.unsubscribe();
+  });
+
+  return new EmbeddedScene({
+    $timeRange: timeRange,
+    $variables: new SceneVariableSet({
+      variables: [adHocFilters],
+    }),
+    body: new SceneFlexLayout({
+      direction: 'column',
+      children: [
+        // Top row: compliance + budget
+        new SceneFlexItem({
+          height: 100,
+          body: new SceneFlexLayout({
+            direction: 'row',
+            children: [
+              new SceneFlexItem({
+                body: new VizPanel({
+                  title: `Compliance (target: ${(slo.target * 100).toFixed(1)}%)`,
+                  pluginId: 'stat',
+                  $data: complianceQuery,
+                  fieldConfig: {
+                    defaults: {
+                      unit: 'percentunit',
+                      thresholds: {
+                        mode: 'absolute' as any,
+                        steps: [
+                          { value: -Infinity, color: 'red' },
+                          { value: slo.target - 0.01, color: 'orange' },
+                          { value: slo.target, color: 'green' },
+                        ],
+                      },
+                      decimals: 2,
+                    },
+                    overrides: [],
+                  },
+                  options: {
+                    colorMode: 'background',
+                    graphMode: 'none',
+                    reduceOptions: { calcs: ['lastNotNull'] },
+                  },
+                }),
+              }),
+              new SceneFlexItem({
+                body: new VizPanel({
+                  title: 'Error Budget Remaining',
+                  pluginId: 'gauge',
+                  $data: budgetQuery,
+                  fieldConfig: {
+                    defaults: {
+                      unit: 'percentunit',
+                      min: -0.05,
+                      max: 0.05,
+                      thresholds: {
+                        mode: 'absolute' as any,
+                        steps: [
+                          { value: -Infinity, color: 'red' },
+                          { value: 0, color: 'green' },
+                        ],
+                      },
+                      decimals: 3,
+                    },
+                    overrides: [],
+                  },
+                  options: {
+                    reduceOptions: { calcs: ['lastNotNull'] },
+                    showThresholdLabels: false,
+                    showThresholdMarkers: true,
+                  },
+                }),
+              }),
+            ],
+          }),
+        }),
+        // Middle row: timeseries
+        new SceneFlexItem({
+          height: 250,
+          body: new VizPanel({
+            title: tsTitle,
+            pluginId: 'timeseries',
+            $data: tsQuery,
+            fieldConfig: {
+              defaults: {
+                custom: {
+                  lineWidth: 2,
+                  fillOpacity: 10,
+                  pointSize: 4,
+                  showPoints: 'never' as any,
+                  thresholdsStyle: {
+                    mode: 'line' as any,
+                  },
+                },
+                thresholds: {
+                  mode: 'absolute' as any,
+                  steps: slo.type === 'latency'
+                    ? [
+                        { value: -Infinity, color: 'green' },
+                        { value: slo.thresholdMs ?? 500, color: 'red' },
+                      ]
+                    : [
+                        { value: -Infinity, color: 'green' },
+                        { value: slo.thresholdRate ?? 0.01, color: 'red' },
+                      ],
+                },
+              },
+              overrides: [],
+            },
+            options: {
+              legend: { showLegend: true },
+              tooltip: { mode: 'single' },
+            },
+          }),
+        }),
+        // Bottom: drilldown viz (heatmap for latency, timeseries for error_rate)
+        new SceneFlexItem({
+          height: 350,
+          body: slo.type === 'latency'
+            ? new VizPanel({
+                title: `Trace Latency Heatmap (${slo.route})`,
+                pluginId: 'heatmap-bubbles-panel',
+                $data: drilldownQuery,
+                options: {
+                  yAxisScale: 'log',
+                  colorScheme: 'oranges',
+                  yBuckets: 40,
+                },
+              })
+            : new VizPanel({
+                title: `Error Rate (${slo.route})`,
+                pluginId: 'timeseries-selection-panel',
+                $data: drilldownQuery,
+                options: {
+                  lineColor: '#e53935',
+                  fillOpacity: 15,
+                  thresholdValue: slo.thresholdRate ?? undefined,
+                  thresholdColor: '#fb8c00',
+                  yAxisLabel: 'Error Rate',
+                },
+              }),
+        }),
+        // Bottom: comparison grid
+        new SceneFlexItem({
+          minHeight: 400,
+          body: comparisonPanel,
+        }),
+      ],
+    }),
+    controls: [
+      new VariableValueSelectors({}),
+      new SceneControlsSpacer(),
+      selectionState,
+      new SceneTimePicker({ isOnCanvas: true }),
+      new SceneRefreshPicker({
+        intervals: ['10s', '30s', '1m', '5m'],
+        isOnCanvas: true,
+      }),
+    ],
+  });
+}

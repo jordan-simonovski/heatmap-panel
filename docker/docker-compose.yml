@@ -1,0 +1,75 @@
+services:
+  clickhouse-server:
+    image: clickhouse/clickhouse-server:latest-alpine
+    container_name: clickhouse-server
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - ./clickhouse-users.xml:/etc/clickhouse-server/users.d/default-password.xml:ro
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--host", "localhost", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - heatmap
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    command: ["--config=/etc/otel-collector-config.yml"]
+    volumes:
+      - ./otel-collector-config.yml:/etc/otel-collector-config.yml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      clickhouse-server:
+        condition: service_healthy
+    networks:
+      - heatmap
+
+  trace-generator:
+    build:
+      context: ../trace-generator
+      dockerfile: Dockerfile
+    container_name: trace-generator
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+      - OTEL_EXPORTER_OTLP_INSECURE=true
+    depends_on:
+      - otel-collector
+    networks:
+      - heatmap
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_LOG_LEVEL=info
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=heatmap-bubbles-panel,timeseries-selection-panel,heatmap-bubbles-app,slo-bubbles-app
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./provisioning:/etc/grafana/provisioning
+      - ../plugins/heatmap-panel/dist:/var/lib/grafana/plugins/heatmap-bubbles-panel
+      - ../plugins/timeseries-selection-panel/dist:/var/lib/grafana/plugins/timeseries-selection-panel
+      - ../plugins/heatmap-app/dist:/var/lib/grafana/plugins/heatmap-bubbles-app
+      - ../plugins/slo-app/dist:/var/lib/grafana/plugins/slo-bubbles-app
+    depends_on:
+      clickhouse-server:
+        condition: service_healthy
+    networks:
+      - heatmap
+
+networks:
+  heatmap:

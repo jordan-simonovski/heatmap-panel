@@ -1,0 +1,22 @@
+{
+  "type": "panel",
+  "name": "Timeseries Selection",
+  "id": "timeseries-selection-panel",
+  "info": {
+    "keywords": ["timeseries", "selection", "brush", "comparison"],
+    "description": "Timeseries line chart with horizontal brush selection for comparison analysis",
+    "author": {
+      "name": "Heatmapbubbles"
+    },
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "version": "%VERSION%",
+    "updated": "%TODAY%"
+  },
+  "dependencies": {
+    "grafanaDependency": ">=11.6.0",
+    "plugins": []
+  }
+}

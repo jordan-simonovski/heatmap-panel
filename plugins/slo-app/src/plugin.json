@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "app",
+  "name": "SLO Analysis App",
+  "id": "slo-bubbles-app",
+  "info": {
+    "keywords": ["app", "slo", "heatmap", "traces", "latency", "error-rate", "comparison"],
+    "description": "SLO monitoring with heatmap drilldown and attribute comparison for root-cause analysis",
+    "author": {
+      "name": "Heatmapbubbles"
+    },
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "screenshots": [],
+    "version": "%VERSION%",
+    "updated": "%TODAY%"
+  },
+  "includes": [
+    {
+      "type": "page",
+      "name": "SLO Overview",
+      "path": "/a/%PLUGIN_ID%/overview",
+      "addToNav": true,
+      "defaultNav": true
+    },
+    {
+      "type": "page",
+      "name": "SLO Detail",
+      "path": "/a/%PLUGIN_ID%/slo/:id",
+      "addToNav": false
+    }
+  ],
+  "dependencies": {
+    "grafanaDependency": ">=11.6.0",
+    "plugins": []
+  }
+}

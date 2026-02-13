@@ -1,0 +1,18 @@
+import { BusEventWithPayload } from '@grafana/data';
+
+export interface HeatmapOptions {
+  yAxisScale: 'linear' | 'log';
+  colorScheme: 'blues' | 'greens' | 'oranges' | 'reds';
+  yBuckets: number;
+}
+
+export interface HeatmapSelection {
+  timeRange: { from: number; to: number };
+  latencyRange: { min: number; max: number };
+  traceIds: string[];
+  spanCount: number;
+}
+
+export class HeatmapSelectionEvent extends BusEventWithPayload<HeatmapSelection> {
+  static type = 'heatmap-bubbles-selection';
+}

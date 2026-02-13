@@ -1,0 +1,16 @@
+{
+  "name": "heatmap-bubbles",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --workspace=plugins/heatmap-panel & npm run dev --workspace=plugins/timeseries-selection-panel & npm run dev --workspace=plugins/heatmap-app & npm run dev --workspace=plugins/slo-app",
+    "build": "npm run build --workspace=plugins/heatmap-panel && npm run build --workspace=plugins/timeseries-selection-panel && npm run build --workspace=plugins/heatmap-app && npm run build --workspace=plugins/slo-app",
+    "typecheck": "npm run typecheck --workspace=plugins/heatmap-panel && npm run typecheck --workspace=plugins/timeseries-selection-panel && npm run typecheck --workspace=plugins/heatmap-app && npm run typecheck --workspace=plugins/slo-app"
+  },
+  "workspaces": [
+    "packages/*",
+    "plugins/heatmap-panel",
+    "plugins/timeseries-selection-panel",
+    "plugins/heatmap-app",
+    "plugins/slo-app"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "app",
+  "name": "Heatmap Bubbles App",
+  "id": "heatmap-bubbles-app",
+  "info": {
+    "keywords": ["app", "heatmap", "bubbles", "traces", "latency", "comparison"],
+    "description": "Bubbles trace analysis app with heatmap selection and attribute comparison",
+    "author": {
+      "name": "Heatmapbubbles"
+    },
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "screenshots": [],
+    "version": "%VERSION%",
+    "updated": "%TODAY%"
+  },
+  "includes": [
+    {
+      "type": "page",
+      "name": "Bubbles",
+      "path": "/a/%PLUGIN_ID%/bubbles",
+      "addToNav": true,
+      "defaultNav": true
+    }
+  ],
+  "dependencies": {
+    "grafanaDependency": ">=11.6.0",
+    "plugins": []
+  }
+}
