@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
-import { PanelProps, getFieldDisplayName, FieldType } from '@grafana/data';
-import { getAppEvents, locationService } from '@grafana/runtime';
+import { PanelProps, getFieldDisplayName, FieldType, LoadingState } from '@grafana/data';
+import { getAppEvents, locationService, PanelDataErrorView } from '@grafana/runtime';
 import { useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
 import { HeatmapOptions, HeatmapSelection, HeatmapSelectionEvent } from '../types';
@@ -56,7 +56,7 @@ interface ContextMenuState {
   payload: HeatmapSelection;
 }
 
-export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, timeRange, onChangeTimeRange }) => {
+export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, timeRange, onChangeTimeRange, id }) => {
   const theme = useTheme2();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -451,6 +451,12 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
   }, []);
 
   const singleTrace = contextMenu && contextMenu.payload.traceIds.length === 1;
+
+  if (data.state === LoadingState.Error) {
+    return (
+      <PanelDataErrorView panelId={id} data={data} needsStringField={false} needsNumberField={false} needsTimeField={false} />
+    );
+  }
 
   return (
     <div

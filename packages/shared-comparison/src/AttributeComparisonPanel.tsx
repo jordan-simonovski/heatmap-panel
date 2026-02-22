@@ -5,6 +5,7 @@ import {
   SceneComponentProps,
   SceneObjectBase,
   SceneObjectState,
+  sceneGraph,
 } from '@grafana/scenes';
 import { GrafanaTheme2 } from '@grafana/data';
 import { Icon, IconButton, Input, Tooltip, useStyles2 } from '@grafana/ui';
@@ -127,7 +128,12 @@ export class AttributeComparisonPanel extends SceneObjectBase<AttributeCompariso
       timeAndDuration += ` AND Duration >= ${minNano} AND Duration <= ${maxNano}`;
     }
     const selFilter = `${timeAndDuration}${extra}`;
-    const baseFilter = `NOT (${timeAndDuration})${extra}`;
+
+    const tr = sceneGraph.getTimeRange(this).state.value;
+    const panelFrom = Math.floor(tr.from.valueOf());
+    const panelTo = Math.floor(tr.to.valueOf());
+    const panelTimeFilter = `Timestamp >= fromUnixTimestamp64Milli(${panelFrom}) AND Timestamp <= fromUnixTimestamp64Milli(${panelTo})`;
+    const baseFilter = `${panelTimeFilter} AND NOT (${timeAndDuration})${extra}`;
 
     const results: ComparisonResult[] = [];
 

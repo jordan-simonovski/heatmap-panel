@@ -1,5 +1,6 @@
 import {
   AdHocFiltersVariable,
+  CustomVariable,
   EmbeddedScene,
   QueryVariable,
   SceneControlsSpacer,
@@ -22,8 +23,16 @@ import { AttributeComparisonPanel } from '../../components/Bubbles/AttributeComp
  * We do NOT use ${filters:raw} because the ClickHouse datasource SQL parser
  * chokes on the table.column dot-notation it produces.
  */
-function buildHeatmapSql(serviceVar: QueryVariable, adHocFilters: AdHocFiltersVariable): string {
+function buildHeatmapSql(
+  serviceVar: QueryVariable,
+  adHocFilters: AdHocFiltersVariable,
+  mode: string
+): string {
   const parts: string[] = [];
+
+  if (mode === 'errors') {
+    parts.push(`StatusCode = 'STATUS_CODE_ERROR'`);
+  }
 
   const svc = String(serviceVar.state.value ?? '%');
   if (svc && svc !== '' && svc !== '$__all') {
@@ -71,6 +80,13 @@ export function bubblesScene() {
     allValue: '%',
   });
 
+  const modeVar = new CustomVariable({
+    name: 'mode',
+    label: 'View',
+    query: 'latency : Latency, errors : Errors',
+    value: 'latency',
+  });
+
   const adHocFilters = new AdHocFiltersVariable({
     name: 'filters',
     label: 'Filters',
@@ -80,13 +96,15 @@ export function bubblesScene() {
     filters: [],
   });
 
+  const currentMode = () => String(modeVar.state.value ?? 'latency');
+
   const heatmapQuery = new SceneQueryRunner({
     datasource: CLICKHOUSE_DS,
     queries: [
       {
         refId: 'heatmap',
         datasource: CLICKHOUSE_DS,
-        rawSql: buildHeatmapSql(serviceVar, adHocFilters),
+        rawSql: buildHeatmapSql(serviceVar, adHocFilters, currentMode()),
         format: 1,
         queryType: 'sql',
       },
@@ -95,7 +113,7 @@ export function bubblesScene() {
   });
 
   function refreshHeatmapQuery() {
-    const newSql = buildHeatmapSql(serviceVar, adHocFilters);
+    const newSql = buildHeatmapSql(serviceVar, adHocFilters, currentMode());
     const current = heatmapQuery.state.queries[0];
     if ((current as any).rawSql === newSql) {
       return;
@@ -148,10 +166,37 @@ export function bubblesScene() {
     return () => sub.unsubscribe();
   });
 
+  const PANEL_TITLES: Record<string, string> = {
+    latency: 'Trace Latency Heatmap',
+    errors: 'Error Spans Heatmap',
+  };
+
+  const heatmapVizPanel = new VizPanel({
+    title: PANEL_TITLES[currentMode()] ?? PANEL_TITLES.latency,
+    pluginId: 'heatmap-bubbles-panel',
+    options: {
+      yAxisScale: 'log',
+      colorScheme: 'blues',
+      yBuckets: 40,
+    },
+  });
+
+  modeVar.addActivationHandler(() => {
+    const sub = modeVar.subscribeToState((newState, prevState) => {
+      if (newState.value !== prevState.value) {
+        refreshHeatmapQuery();
+        heatmapVizPanel.setState({
+          title: PANEL_TITLES[String(newState.value)] ?? PANEL_TITLES.latency,
+        });
+      }
+    });
+    return () => sub.unsubscribe();
+  });
+
   return new EmbeddedScene({
     $timeRange: timeRange,
     $variables: new SceneVariableSet({
-      variables: [serviceVar, adHocFilters],
+      variables: [modeVar, serviceVar, adHocFilters],
     }),
     $data: heatmapQuery,
     body: new SceneFlexLayout({
@@ -159,15 +204,7 @@ export function bubblesScene() {
       children: [
         new SceneFlexItem({
           height: 350,
-          body: new VizPanel({
-            title: 'Trace Latency Heatmap',
-            pluginId: 'heatmap-bubbles-panel',
-            options: {
-              yAxisScale: 'log',
-              colorScheme: 'blues',
-              yBuckets: 40,
-            },
-          }),
+          body: heatmapVizPanel,
         }),
         new SceneFlexItem({
           minHeight: 400,

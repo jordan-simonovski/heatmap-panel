@@ -1,4 +1,4 @@
-import { SceneObjectBase, SceneObjectState } from '@grafana/scenes';
+import { SceneObjectBase, SceneObjectState, sceneGraph } from '@grafana/scenes';
 import { getAppEvents } from '@grafana/runtime';
 import { HeatmapSelection, HeatmapSelectionEvent } from './types';
 
@@ -43,13 +43,17 @@ export class SelectionState extends SceneObjectBase<SelectionStateState> {
     return filter;
   }
 
-  /** SQL WHERE clause fragment for spans NOT in the selection box (baseline) */
+  /** SQL WHERE clause fragment for spans NOT in the selection box (baseline), scoped to the panel time range */
   public getBaselineFilter(): string {
     const sel = this.state.selection;
     if (!sel) {
       return '1=1';
     }
-    return `NOT (${this.getSelectionFilter()})`;
+    const tr = sceneGraph.getTimeRange(this).state.value;
+    const panelFrom = Math.floor(tr.from.valueOf());
+    const panelTo = Math.floor(tr.to.valueOf());
+    const panelTimeFilter = `Timestamp >= fromUnixTimestamp64Milli(${panelFrom}) AND Timestamp <= fromUnixTimestamp64Milli(${panelTo})`;
+    return `${panelTimeFilter} AND NOT (${this.getSelectionFilter()})`;
   }
 
   public clearSelection() {
