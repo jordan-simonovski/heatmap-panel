@@ -35,12 +35,32 @@ const COLOR_RAMPS: Record<string, (t: number) => string> = {
   },
 };
 
+/** Green (t=0) -> yellow (t=0.5) -> red (t=1) for error-rate mode */
+const ERROR_RATE_RAMP = (t: number): string => {
+  if (t <= 0) {
+    return 'rgb(76,175,80)';
+  }
+  if (t <= 0.5) {
+    const f = t / 0.5;
+    const r = Math.round(76 + f * (255 - 76));
+    const g = Math.round(175 + f * (235 - 175));
+    const b = Math.round(80 + f * (59 - 80));
+    return `rgb(${r},${g},${b})`;
+  }
+  const f = (t - 0.5) / 0.5;
+  const r = Math.round(255 - f * (255 - 211));
+  const g = Math.round(235 - f * (235 - 47));
+  const b = Math.round(59 - f * (59 - 47));
+  return `rgb(${r},${g},${b})`;
+};
+
 const MARGIN = { top: 10, right: 10, bottom: 40, left: 60 };
 
 interface RawSpan {
   time: number;
   duration: number;
   traceId: string;
+  isError: boolean;
 }
 
 interface DragState {
@@ -71,6 +91,7 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
       let timeIdx = -1;
       let durationIdx = -1;
       let traceIdIdx = -1;
+      let errorIdx = -1;
 
       for (let i = 0; i < frame.fields.length; i++) {
         const f = frame.fields[i];
@@ -81,6 +102,8 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
           durationIdx = i;
         } else if (name === 'traceid' || name === 'trace_id') {
           traceIdIdx = i;
+        } else if (name === 'iserror' || name === 'is_error') {
+          errorIdx = i;
         }
       }
 
@@ -91,6 +114,7 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
       const timeField = frame.fields[timeIdx];
       const durField = frame.fields[durationIdx];
       const traceField = traceIdIdx >= 0 ? frame.fields[traceIdIdx] : null;
+      const errorField = errorIdx >= 0 ? frame.fields[errorIdx] : null;
 
       for (let i = 0; i < frame.length; i++) {
         let timeVal = timeField.values[i];
@@ -105,10 +129,13 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
           dur = dur / 1e6;
         }
 
+        const errVal = errorField ? errorField.values[i] : false;
+
         spans.push({
           time: timeVal,
           duration: Math.max(dur, 0.01),
           traceId: traceField ? String(traceField.values[i]) : '',
+          isError: errVal === true || errVal === 1 || errVal === '1',
         });
       }
     }
@@ -191,7 +218,8 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
 
     const xBuckets = Math.max(Math.floor(plotW / 4), 10);
     const yBuckets = options.yBuckets || 40;
-    const grid = new Float64Array(xBuckets * yBuckets);
+    const gridTotal = new Float64Array(xBuckets * yBuckets);
+    const gridError = new Float64Array(xBuckets * yBuckets);
 
     const logMin = Math.log10(Math.max(minDur, 0.1));
     const logMax = Math.log10(maxDur);
@@ -209,24 +237,40 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
       const xi = Math.min(Math.floor(xFrac * xBuckets), xBuckets - 1);
       const yi = Math.min(Math.floor(yFrac * yBuckets), yBuckets - 1);
       if (xi >= 0 && yi >= 0) {
-        grid[yi * xBuckets + xi]++;
+        const idx = yi * xBuckets + xi;
+        gridTotal[idx]++;
+        if (s.isError) {
+          gridError[idx]++;
+        }
       }
     }
 
+    const isErrorRate = options.colorMode === 'errorRate';
+
     let maxCount = 0;
-    for (let i = 0; i < grid.length; i++) {
-      if (grid[i] > maxCount) { maxCount = grid[i]; }
+    if (!isErrorRate) {
+      for (let i = 0; i < gridTotal.length; i++) {
+        if (gridTotal[i] > maxCount) { maxCount = gridTotal[i]; }
+      }
     }
 
-    const colorFn = COLOR_RAMPS[options.colorScheme] || COLOR_RAMPS.blues;
+    const colorFn = isErrorRate ? ERROR_RATE_RAMP : (COLOR_RAMPS[options.colorScheme] || COLOR_RAMPS.blues);
     const cellW = plotW / xBuckets;
     const cellH = plotH / yBuckets;
 
     for (let yi = 0; yi < yBuckets; yi++) {
       for (let xi = 0; xi < xBuckets; xi++) {
-        const count = grid[yi * xBuckets + xi];
-        if (count === 0) { continue; }
-        const t = Math.log1p(count) / Math.log1p(maxCount);
+        const idx = yi * xBuckets + xi;
+        const total = gridTotal[idx];
+        if (total === 0) { continue; }
+
+        let t: number;
+        if (isErrorRate) {
+          t = gridError[idx] / total;
+        } else {
+          t = Math.log1p(total) / Math.log1p(maxCount);
+        }
+
         ctx.fillStyle = colorFn(t);
         const px = MARGIN.left + xi * cellW;
         const py = MARGIN.top + plotH - (yi + 1) * cellH;

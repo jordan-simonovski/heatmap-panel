@@ -12,7 +12,7 @@ import {
   VariableValueSelectors,
   VizPanel,
 } from '@grafana/scenes';
-import { CLICKHOUSE_DS, COMPARISON_ATTRIBUTES } from '../../constants';
+import { CLICKHOUSE_DS } from '../../constants';
 import {
   SLODefinition,
   latencyTimeseriesSql,
@@ -86,7 +86,7 @@ export function detailScene(slo: SLODefinition) {
     label: 'Filters',
     datasource: CLICKHOUSE_DS,
     applyMode: 'manual',
-    defaultKeys: COMPARISON_ATTRIBUTES.map((a) => ({ text: a, value: a })),
+    defaultKeys: [],
     filters: [],
   });
 
@@ -159,7 +159,6 @@ export function detailScene(slo: SLODefinition) {
   const selectionState = new SelectionState();
   const comparisonPanel = new AttributeComparisonPanel({
     datasource: CLICKHOUSE_DS,
-    attributes: COMPARISON_ATTRIBUTES,
   });
 
   comparisonPanel.setAdHocVariable(adHocFilters);

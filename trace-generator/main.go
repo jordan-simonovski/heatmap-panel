@@ -359,6 +359,7 @@ func emitSlowCheckout(ctx context.Context, st *serviceTracers, ts time.Time, a t
 			attribute.Int("http.status_code", 200),
 		)...),
 	)
+	rootSpan.SetStatus(codes.Ok, "")
 
 	svcStart := ts.Add(jitter())
 	svcCtx, svcSpan := st.tracer("order-service").Start(rootCtx, "order-service.handle",
@@ -453,6 +454,7 @@ func emitRedisTimeoutAPAC(ctx context.Context, st *serviceTracers, ts time.Time,
 			attribute.Int("http.status_code", 200),
 		)...),
 	)
+	rootSpan.SetStatus(codes.Ok, "")
 
 	svcStart := ts.Add(jitter())
 	svcCtx, svcSpan := st.tracer(svc).Start(rootCtx, svc+".handle",
@@ -563,6 +565,8 @@ func emitAuthMemoryLeak(ctx context.Context, st *serviceTracers, ts time.Time, a
 	)
 	if errMsg != "" {
 		rootSpan.SetStatus(codes.Error, errMsg)
+	} else {
+		rootSpan.SetStatus(codes.Ok, "")
 	}
 
 	svcStart := ts.Add(jitter())
@@ -679,6 +683,7 @@ func emitUmbrellaCompliance(ctx context.Context, st *serviceTracers, ts time.Tim
 			attribute.Int("http.status_code", statusCode),
 		)...),
 	)
+	rootSpan.SetStatus(codes.Ok, "")
 
 	svcStart := ts.Add(jitter())
 	svcCtx, svcSpan := st.tracer(svc).Start(rootCtx, svc+".handle",
@@ -722,6 +727,7 @@ func emitGlobexBatch(ctx context.Context, st *serviceTracers, ts time.Time, a tr
 			attribute.Int("http.status_code", 200),
 		)...),
 	)
+	rootSpan.SetStatus(codes.Ok, "")
 
 	svcStart := ts.Add(jitter())
 	svcCtx, svcSpan := st.tracer("search-service").Start(rootCtx, "search-service.handle",
@@ -764,6 +770,7 @@ func emitNormalTrace(ctx context.Context, st *serviceTracers, ts time.Time, a tr
 			attribute.Int("http.status_code", statusCode),
 		)...),
 	)
+	rootSpan.SetStatus(codes.Ok, "")
 
 	svcStart := ts.Add(jitter())
 	svcCtx, svcSpan := st.tracer(svc).Start(rootCtx, svc+".handle",

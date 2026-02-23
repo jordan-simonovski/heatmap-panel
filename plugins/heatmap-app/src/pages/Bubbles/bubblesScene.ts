@@ -1,6 +1,5 @@
 import {
   AdHocFiltersVariable,
-  CustomVariable,
   EmbeddedScene,
   QueryVariable,
   SceneControlsSpacer,
@@ -14,9 +13,10 @@ import {
   VariableValueSelectors,
   VizPanel,
 } from '@grafana/scenes';
-import { CLICKHOUSE_DS, COMPARISON_ATTRIBUTES } from '../../constants';
+import { CLICKHOUSE_DS } from '../../constants';
 import { SelectionState } from '../../components/Bubbles/SelectionState';
 import { AttributeComparisonPanel } from '../../components/Bubbles/AttributeComparisonPanel';
+import { ViewModeControl } from '../../components/Bubbles/ViewModeControl';
 
 /**
  * Build the heatmap SQL with the current service + ad-hoc filter state baked in.
@@ -29,10 +29,6 @@ function buildHeatmapSql(
   mode: string
 ): string {
   const parts: string[] = [];
-
-  if (mode === 'errors') {
-    parts.push(`StatusCode = 'STATUS_CODE_ERROR'`);
-  }
 
   const svc = String(serviceVar.state.value ?? '%');
   if (svc && svc !== '' && svc !== '$__all') {
@@ -48,11 +44,12 @@ function buildHeatmapSql(
   }
 
   const extra = parts.length > 0 ? '\n          AND ' + parts.join('\n          AND ') : '';
+  const errorCol = mode === 'errors' ? `,\n          StatusCode = 'Error' as isError` : '';
 
   return `SELECT
           Timestamp as timestamp,
           Duration / 1000000 as duration,
-          TraceId as traceId
+          TraceId as traceId${errorCol}
         FROM otel_traces
         WHERE $__timeFilter(Timestamp)${extra}
         ORDER BY Timestamp
@@ -80,23 +77,18 @@ export function bubblesScene() {
     allValue: '%',
   });
 
-  const modeVar = new CustomVariable({
-    name: 'mode',
-    label: 'View',
-    query: 'latency : Latency, errors : Errors',
-    value: 'latency',
-  });
+  const viewMode = new ViewModeControl();
 
   const adHocFilters = new AdHocFiltersVariable({
     name: 'filters',
     label: 'Filters',
     datasource: CLICKHOUSE_DS,
     applyMode: 'manual',
-    defaultKeys: COMPARISON_ATTRIBUTES.map((a) => ({ text: a, value: a })),
+    defaultKeys: [],
     filters: [],
   });
 
-  const currentMode = () => String(modeVar.state.value ?? 'latency');
+  const currentMode = () => viewMode.state.mode;
 
   const heatmapQuery = new SceneQueryRunner({
     datasource: CLICKHOUSE_DS,
@@ -127,7 +119,6 @@ export function bubblesScene() {
   const selectionState = new SelectionState();
   const comparisonPanel = new AttributeComparisonPanel({
     datasource: CLICKHOUSE_DS,
-    attributes: COMPARISON_ATTRIBUTES,
   });
 
   comparisonPanel.setAdHocVariable(adHocFilters);
@@ -177,17 +168,30 @@ export function bubblesScene() {
     options: {
       yAxisScale: 'log',
       colorScheme: 'blues',
+      colorMode: currentMode() === 'errors' ? 'errorRate' : 'count',
       yBuckets: 40,
     },
   });
 
-  modeVar.addActivationHandler(() => {
-    const sub = modeVar.subscribeToState((newState, prevState) => {
-      if (newState.value !== prevState.value) {
+  function modeFilterSql(mode: string): string {
+    return mode === 'errors' ? `StatusCode = 'Error'` : '';
+  }
+
+  comparisonPanel.setModeFilter(modeFilterSql(currentMode()));
+
+  viewMode.addActivationHandler(() => {
+    const sub = viewMode.subscribeToState((newState, prevState) => {
+      if (newState.mode !== prevState.mode) {
         refreshHeatmapQuery();
+        const opts = heatmapVizPanel.state.options as Record<string, unknown>;
         heatmapVizPanel.setState({
-          title: PANEL_TITLES[String(newState.value)] ?? PANEL_TITLES.latency,
+          title: PANEL_TITLES[newState.mode] ?? PANEL_TITLES.latency,
+          options: { ...opts, colorMode: newState.mode === 'errors' ? 'errorRate' : 'count' },
         });
+        comparisonPanel.setModeFilter(modeFilterSql(newState.mode));
+        if (comparisonPanel.state.selection) {
+          comparisonPanel.setSelection(comparisonPanel.state.selection);
+        }
       }
     });
     return () => sub.unsubscribe();
@@ -196,7 +200,7 @@ export function bubblesScene() {
   return new EmbeddedScene({
     $timeRange: timeRange,
     $variables: new SceneVariableSet({
-      variables: [modeVar, serviceVar, adHocFilters],
+      variables: [serviceVar, adHocFilters],
     }),
     $data: heatmapQuery,
     body: new SceneFlexLayout({
@@ -213,6 +217,7 @@ export function bubblesScene() {
       ],
     }),
     controls: [
+      viewMode,
       new VariableValueSelectors({}),
       new SceneControlsSpacer(),
       selectionState,

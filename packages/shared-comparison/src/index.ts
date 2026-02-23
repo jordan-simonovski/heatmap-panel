@@ -5,4 +5,4 @@ export type { ValueDistribution, ComparisonResult } from './comparison';
 export { SelectionState } from './SelectionState';
 export type { SelectionStateState } from './SelectionState';
 export { AttributeComparisonPanel } from './AttributeComparisonPanel';
-export type { ComparisonPanelConfig } from './AttributeComparisonPanel';
+export type { ComparisonAttribute, ComparisonPanelConfig } from './AttributeComparisonPanel';

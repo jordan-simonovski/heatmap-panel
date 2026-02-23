@@ -28,6 +28,17 @@ export const plugin = new PanelPlugin<HeatmapOptions>(HeatmapPanel).setPanelOpti
         ],
       },
     })
+    .addRadio({
+      path: 'colorMode',
+      name: 'Color mode',
+      defaultValue: 'count',
+      settings: {
+        options: [
+          { value: 'count', label: 'Count' },
+          { value: 'errorRate', label: 'Error Rate' },
+        ],
+      },
+    })
     .addSliderInput({
       path: 'yBuckets',
       name: 'Y-axis buckets',

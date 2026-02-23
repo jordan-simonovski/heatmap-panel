@@ -15,10 +15,18 @@ import { lastValueFrom } from 'rxjs';
 import { HeatmapSelection } from './types';
 import { ComparisonResult, ValueDistribution, computeComparison } from './comparison';
 
+export interface ComparisonAttribute {
+  /** Display label shown on the card */
+  label: string;
+  /** SQL expression for the column value — e.g. `SpanAttributes['http.route']` or `StatusCode` */
+  expr: string;
+}
+
 /** Configuration injected per-app so the panel is datasource/attribute agnostic. */
 export interface ComparisonPanelConfig {
   datasource: { uid: string; type: string };
-  attributes: string[];
+  /** Static attribute list. When empty or omitted, attributes are discovered dynamically from SpanAttributes keys. */
+  attributes?: ComparisonAttribute[];
   tracesTable?: string; // default 'otel_traces'
 }
 
@@ -30,8 +38,14 @@ interface AttributeComparisonState extends SceneObjectState {
 }
 
 export class AttributeComparisonPanel extends SceneObjectBase<AttributeComparisonState> {
+  private static readonly TOP_LEVEL_COLUMNS: ComparisonAttribute[] = [
+    { label: 'StatusCode', expr: 'StatusCode' },
+    { label: 'ServiceName', expr: 'ServiceName' },
+  ];
+
   private adHocVar: AdHocFiltersVariable | null = null;
   private serviceVar: QueryVariable | null = null;
+  private modeFilter = '';
   private readonly config: ComparisonPanelConfig;
 
   constructor(config: ComparisonPanelConfig) {
@@ -51,6 +65,11 @@ export class AttributeComparisonPanel extends SceneObjectBase<AttributeCompariso
     this.serviceVar = v;
   }
 
+  /** Optional SQL WHERE fragment applied to both selection and baseline queries (e.g. status code filter). */
+  public setModeFilter(filter: string) {
+    this.modeFilter = filter;
+  }
+
   public setSelection(selection: HeatmapSelection | null) {
     this.setState({ selection });
     if (selection) {
@@ -60,9 +79,13 @@ export class AttributeComparisonPanel extends SceneObjectBase<AttributeCompariso
     }
   }
 
-  /** Build the extra WHERE fragments from service variable + ad-hoc filters */
+  /** Build the extra WHERE fragments from mode, service variable + ad-hoc filters */
   private getExtraFilters(): string {
     const parts: string[] = [];
+
+    if (this.modeFilter) {
+      parts.push(this.modeFilter);
+    }
 
     // Service filter
     if (this.serviceVar) {
@@ -113,6 +136,50 @@ export class AttributeComparisonPanel extends SceneObjectBase<AttributeCompariso
     }
   }
 
+  private async discoverAttributes(whereFilter: string): Promise<ComparisonAttribute[]> {
+    const sql = `SELECT DISTINCT arrayJoin(SpanAttributes.keys) AS key
+    FROM ${this.table}
+    WHERE ${whereFilter}
+    ORDER BY key
+    LIMIT 50`;
+
+    try {
+      const response = await lastValueFrom(
+        getBackendSrv().fetch<{ results: Record<string, { frames: Array<{ data: { values: unknown[][] } }> }> }>({
+          url: '/api/ds/query',
+          method: 'POST',
+          data: {
+            queries: [{
+              refId: 'A',
+              datasource: this.config.datasource,
+              rawSql: sql,
+              format: 1,
+              queryType: 'sql',
+            }],
+            from: '0',
+            to: String(Date.now()),
+          },
+        })
+      );
+
+      const frames = response.data?.results?.A?.frames;
+      if (!frames || frames.length === 0) {
+        return [...AttributeComparisonPanel.TOP_LEVEL_COLUMNS];
+      }
+
+      const keys = (frames[0].data?.values?.[0] ?? []) as string[];
+      const spanAttrs: ComparisonAttribute[] = keys.map((k) => ({
+        label: k,
+        expr: `SpanAttributes['${k}']`,
+      }));
+
+      return [...AttributeComparisonPanel.TOP_LEVEL_COLUMNS, ...spanAttrs];
+    } catch (err) {
+      console.error('Attribute discovery failed:', err);
+      return [...AttributeComparisonPanel.TOP_LEVEL_COLUMNS];
+    }
+  }
+
   private async runComparison(sel: HeatmapSelection) {
     this.setState({ loading: true });
 
@@ -135,36 +202,42 @@ export class AttributeComparisonPanel extends SceneObjectBase<AttributeCompariso
     const panelTimeFilter = `Timestamp >= fromUnixTimestamp64Milli(${panelFrom}) AND Timestamp <= fromUnixTimestamp64Milli(${panelTo})`;
     const baseFilter = `${panelTimeFilter} AND NOT (${timeAndDuration})${extra}`;
 
+    const staticAttrs = this.config.attributes ?? [];
+    const attributes = staticAttrs.length > 0
+      ? staticAttrs
+      : await this.discoverAttributes(`${panelTimeFilter}${extra}`);
+
     const results: ComparisonResult[] = [];
 
-    const promises = this.config.attributes.map(async (attr) => {
+    const promises = attributes.map(async (attr) => {
       try {
         const [selDist, baseDist] = await Promise.all([
-          this.queryDistribution(attr, selFilter),
-          this.queryDistribution(attr, baseFilter),
+          this.queryDistribution(attr.expr, selFilter),
+          this.queryDistribution(attr.expr, baseFilter),
         ]);
-        return computeComparison(attr, baseDist, selDist);
+        return computeComparison(attr.label, baseDist, selDist);
       } catch (err) {
-        console.error(`Failed to query attribute ${attr}:`, err);
-        return computeComparison(attr, [], []);
+        console.error(`Failed to query attribute ${attr.label}:`, err);
+        return computeComparison(attr.label, [], []);
       }
     });
 
     const all = await Promise.all(promises);
-    all.sort((a, b) => b.highestDiffPct - a.highestDiffPct);
-    results.push(...all);
+    const meaningful = all.filter((r) => r.highestDiffPct > 0);
+    meaningful.sort((a, b) => b.highestDiffPct - a.highestDiffPct);
+    results.push(...meaningful);
 
     this.setState({ results, loading: false });
   }
 
-  private async queryDistribution(attr: string, whereFilter: string): Promise<ValueDistribution[]> {
+  private async queryDistribution(expr: string, whereFilter: string): Promise<ValueDistribution[]> {
     const table = this.table;
     const sql = `SELECT
-      SpanAttributes['${attr}'] AS value,
+      ${expr} AS value,
       count() AS cnt
     FROM ${table}
     WHERE ${whereFilter}
-      AND SpanAttributes['${attr}'] != ''
+      AND ${expr} != ''
     GROUP BY value
     ORDER BY cnt DESC
     LIMIT 20`;

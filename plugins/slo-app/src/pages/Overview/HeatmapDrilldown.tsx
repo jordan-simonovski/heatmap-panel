@@ -17,7 +17,7 @@ import {
   errorRateTimeseriesSql,
   errorBudgetSql,
 } from '../../sloDefinitions';
-import { CLICKHOUSE_DS, COMPARISON_ATTRIBUTES } from '../../constants';
+import { CLICKHOUSE_DS } from '../../constants';
 import { getAppEvents } from '@grafana/runtime';
 import { HeatmapSelectionEvent, AttributeComparisonPanel } from '@heatmap/shared-comparison';
 
@@ -339,7 +339,7 @@ export class HeatmapDrilldown extends SceneObjectBase<DrilldownState> {
       label: 'Filters',
       datasource: CLICKHOUSE_DS,
       applyMode: 'manual',
-      defaultKeys: COMPARISON_ATTRIBUTES.map((a) => ({ text: a, value: a })),
+      defaultKeys: [],
       filters: [],
     });
 
@@ -359,7 +359,6 @@ export class HeatmapDrilldown extends SceneObjectBase<DrilldownState> {
 
     const comparisonPanel = new AttributeComparisonPanel({
       datasource: CLICKHOUSE_DS,
-      attributes: COMPARISON_ATTRIBUTES,
     });
 
     comparisonPanel.setAdHocVariable(adHocFilters);

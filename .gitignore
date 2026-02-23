@@ -4,3 +4,4 @@ plugins/*/dist/
 plugins/*/node_modules/
 .cache/
 *.log
+bin/

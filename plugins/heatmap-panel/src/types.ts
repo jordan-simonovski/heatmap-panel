@@ -3,6 +3,7 @@ import { BusEventWithPayload } from '@grafana/data';
 export interface HeatmapOptions {
   yAxisScale: 'linear' | 'log';
   colorScheme: 'blues' | 'greens' | 'oranges' | 'reds';
+  colorMode: 'count' | 'errorRate';
   yBuckets: number;
 }
 
