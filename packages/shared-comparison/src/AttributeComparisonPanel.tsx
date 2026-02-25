@@ -188,19 +188,26 @@ export class AttributeComparisonPanel extends SceneObjectBase<AttributeCompariso
 
     const extra = this.getExtraFilters();
 
+    const quoteSqlString = (v: string) => `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+    const traceIdFilter =
+      sel.traceIds && sel.traceIds.length > 0
+        ? `TraceId IN (${sel.traceIds.map(quoteSqlString).join(', ')})`
+        : '';
+
     let timeAndDuration = `Timestamp >= fromUnixTimestamp64Milli(${fromMs}) AND Timestamp <= fromUnixTimestamp64Milli(${toMs})`;
     if (sel.latencyRange) {
       const minNano = Math.round(sel.latencyRange.min * 1e6);
       const maxNano = Math.round(sel.latencyRange.max * 1e6);
       timeAndDuration += ` AND Duration >= ${minNano} AND Duration <= ${maxNano}`;
     }
-    const selFilter = `${timeAndDuration}${extra}`;
+    const selectionPredicate = traceIdFilter || timeAndDuration;
+    const selFilter = `${selectionPredicate}${extra}`;
 
     const tr = sceneGraph.getTimeRange(this).state.value;
     const panelFrom = Math.floor(tr.from.valueOf());
     const panelTo = Math.floor(tr.to.valueOf());
     const panelTimeFilter = `Timestamp >= fromUnixTimestamp64Milli(${panelFrom}) AND Timestamp <= fromUnixTimestamp64Milli(${panelTo})`;
-    const baseFilter = `${panelTimeFilter} AND NOT (${timeAndDuration})${extra}`;
+    const baseFilter = `${panelTimeFilter} AND NOT (${selectionPredicate})${extra}`;
 
     const staticAttrs = this.config.attributes ?? [];
     const attributes = staticAttrs.length > 0

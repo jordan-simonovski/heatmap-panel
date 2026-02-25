@@ -55,6 +55,8 @@ const ERROR_RATE_RAMP = (t: number): string => {
 };
 
 const MARGIN = { top: 10, right: 10, bottom: 40, left: 60 };
+const Y_AXIS_HEADROOM_FACTOR = 1.2;
+const Y_AXIS_VISUAL_HEADROOM_PCT = 0.2;
 
 interface RawSpan {
   time: number;
@@ -155,7 +157,7 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
       if (s.duration > mxD) { mxD = s.duration; }
     }
     if (mnD < 0.1) { mnD = 0.1; }
-    return { minTime: mnT, maxTime: mxT, minDur: mnD, maxDur: mxD * 1.1 };
+    return { minTime: mnT, maxTime: mxT, minDur: mnD, maxDur: mxD * Y_AXIS_HEADROOM_FACTOR };
   }, [rawSpans]);
 
   const plotW = width - MARGIN.left - MARGIN.right;
@@ -169,13 +171,15 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
   );
   const durToY = useCallback(
     (d: number) => {
+      const usablePlotH = plotH * (1 - Y_AXIS_VISUAL_HEADROOM_PCT);
+      const bottomY = MARGIN.top + plotH;
       if (isLog) {
         const logMin = Math.log10(Math.max(minDur, 0.1));
         const logMax = Math.log10(maxDur);
         const logD = Math.log10(Math.max(d, 0.1));
-        return MARGIN.top + plotH - ((logD - logMin) / (logMax - logMin || 1)) * plotH;
+        return bottomY - ((logD - logMin) / (logMax - logMin || 1)) * usablePlotH;
       }
-      return MARGIN.top + plotH - ((d - minDur) / (maxDur - minDur || 1)) * plotH;
+      return bottomY - ((d - minDur) / (maxDur - minDur || 1)) * usablePlotH;
     },
     [isLog, minDur, maxDur, plotH]
   );
@@ -186,7 +190,8 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
   );
   const yToDur = useCallback(
     (y: number) => {
-      const frac = (MARGIN.top + plotH - y) / plotH;
+      const usablePlotH = plotH * (1 - Y_AXIS_VISUAL_HEADROOM_PCT);
+      const frac = (MARGIN.top + plotH - y) / (usablePlotH || 1);
       if (isLog) {
         const logMin = Math.log10(Math.max(minDur, 0.1));
         const logMax = Math.log10(maxDur);
@@ -226,13 +231,8 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
 
     for (const s of rawSpans) {
       const xFrac = (s.time - minTime) / (maxTime - minTime || 1);
-      let yFrac: number;
-      if (isLog) {
-        const logD = Math.log10(Math.max(s.duration, 0.1));
-        yFrac = (logD - logMin) / (logMax - logMin || 1);
-      } else {
-        yFrac = (s.duration - minDur) / (maxDur - minDur || 1);
-      }
+      const y = durToY(s.duration);
+      const yFrac = (MARGIN.top + plotH - y) / plotH;
 
       const xi = Math.min(Math.floor(xFrac * xBuckets), xBuckets - 1);
       const yi = Math.min(Math.floor(yFrac * yBuckets), yBuckets - 1);
