@@ -14,6 +14,7 @@ import { getBackendSrv } from '@grafana/runtime';
 import { lastValueFrom } from 'rxjs';
 import { HeatmapSelection } from './types';
 import { ComparisonResult, ValueDistribution, computeComparison } from './comparison';
+import { getTopDisplayValues } from './displayValues';
 
 export interface ComparisonAttribute {
   /** Display label shown on the card */
@@ -452,18 +453,9 @@ function AttributeCard({
     0.01
   );
 
-  const allValues = new Set<string>();
-  result.selection.forEach((v) => allValues.add(v.value));
-  result.baseline.forEach((v) => allValues.add(v.value));
-
   const selMap = new Map(result.selection.map((v) => [v.value, v]));
   const baseMap = new Map(result.baseline.map((v) => [v.value, v]));
-
-  const sorted = Array.from(allValues).sort((a, b) => {
-    const countA = (selMap.get(a)?.count ?? 0) + (baseMap.get(a)?.count ?? 0);
-    const countB = (selMap.get(b)?.count ?? 0) + (baseMap.get(b)?.count ?? 0);
-    return countB - countA;
-  });
+  const displayedValues = getTopDisplayValues(result, 10);
 
   const selTotal = result.selection.reduce((a, b) => a + b.count, 0);
   const baseTotal = result.baseline.reduce((a, b) => a + b.count, 0);
@@ -489,7 +481,7 @@ function AttributeCard({
         </div>
       </div>
       <div className={styles.bars}>
-        {sorted.slice(0, 10).map((val) => {
+        {displayedValues.map((val) => {
           const selPct = selMap.get(val)?.percentage ?? 0;
           const basePct = baseMap.get(val)?.percentage ?? 0;
           return (
@@ -705,18 +697,16 @@ function getCardStyles(theme: GrafanaTheme2) {
       height: '5px',
       backgroundColor: '#4285f4',
       borderRadius: '1px',
-      minWidth: '1px',
       transition: 'width 0.3s ease',
     }),
     barSelection: css({
       height: '5px',
       backgroundColor: '#f4b400',
       borderRadius: '1px',
-      minWidth: '1px',
       transition: 'width 0.3s ease',
     }),
     barLabel: css({
-      fontSize: '9px',
+      fontSize: '11px',
       color: theme.colors.text.secondary,
       overflow: 'hidden',
       textOverflow: 'ellipsis',
@@ -749,7 +739,7 @@ function getCardStyles(theme: GrafanaTheme2) {
       lineHeight: '1.2',
     }),
     diffAttr: css({
-      fontSize: '10px',
+      fontSize: '12px',
       color: theme.colors.text.secondary,
       overflow: 'hidden',
       textOverflow: 'ellipsis',

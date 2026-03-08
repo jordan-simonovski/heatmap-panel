@@ -24,9 +24,9 @@ export interface ComparisonResult {
 /**
  * Compute the value with the highest difference between selection and baseline.
  *
- * Scoring is directional:
- * 1) Prefer values over-represented in the selection (selection - baseline).
- * 2) If none exist, fall back to baseline-only/more-common values.
+ * Scoring is directional and selection-first:
+ * values are only considered signal when they are over-represented
+ * in the selection (selection - baseline > 0).
  */
 export function computeComparison(
   attribute: string,
@@ -41,7 +41,6 @@ export function computeComparison(
   let highestDiff = 0;
   let highestDiffValue = '';
   let highestDiffIndex = 0;
-  let foundSelectionSignal = false;
 
   for (let i = 0; i < selection.length; i++) {
     const sel = selection[i];
@@ -51,25 +50,6 @@ export function computeComparison(
       highestDiff = diff;
       highestDiffValue = sel.value;
       highestDiffIndex = i;
-      foundSelectionSignal = true;
-    }
-  }
-
-  // If selection has no over-represented value, fall back to baseline-only values.
-  const selectionMap = new Map<string, number>();
-  for (const s of selection) {
-    selectionMap.set(s.value, s.percentage);
-  }
-  if (!foundSelectionSignal) {
-    for (const b of baseline) {
-      if (!selectionMap.has(b.value)) {
-        const diff = b.percentage; // selection pct is 0
-        if (diff > highestDiff) {
-          highestDiff = diff;
-          highestDiffValue = b.value;
-          highestDiffIndex = -1;
-        }
-      }
     }
   }
 
