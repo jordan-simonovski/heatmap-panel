@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Version or Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Full history is required so changeset can diff against the base branch
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate secrets
+        run: |
+          if [[ -z "${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}" ]]; then
+            echo "Warning: GRAFANA_ACCESS_POLICY_TOKEN secret is not set." \
+              "Plugin signing will fail if a publish is triggered." >&2
+          fi
+
+      - name: Create Release PR or Publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          # When pending changesets exist: bump versions and update changelogs.
+          version: npm run version-packages
+          # When the Version PR is merged (no more pending changesets): build,
+          # sign, and publish every plugin as a GitHub release.
+          publish: npm run publish-plugins
+          commit: 'chore: version packages'
+          title: 'chore: version packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
