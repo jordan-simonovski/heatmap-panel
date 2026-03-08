@@ -9,6 +9,7 @@ await initPluginTranslations(pluginJson.id);
 
 const LazyApp = lazy(() => import('./components/App/App'));
 const LazyAppConfig = lazy(() => import('./components/AppConfig/AppConfig'));
+type JsonData = { apiUrl?: string };
 
 const App = (props: AppRootProps) => (
   <Suspense fallback={<LoadingPlaceholder text="" />}>
@@ -22,7 +23,7 @@ const AppConfig = (props: AppConfigProps) => (
   </Suspense>
 );
 
-export const plugin = new AppPlugin<{}>().setRootPage(App).addConfigPage({
+export const plugin = new AppPlugin<JsonData>().setRootPage(App).addConfigPage({
   title: 'Configuration',
   icon: 'cog',
   body: AppConfig,

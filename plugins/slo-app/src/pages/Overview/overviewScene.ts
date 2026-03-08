@@ -4,7 +4,7 @@ import {
   SceneTimePicker,
   SceneTimeRange,
 } from '@grafana/scenes';
-import { SLO_DEFINITIONS } from '../../sloDefinitions';
+import { getSLODefinitions } from '../../sloDefinitions';
 import { SloOverviewBody, HeatmapDrilldown, buildCardPanels } from './HeatmapDrilldown';
 
 export function overviewScene() {
@@ -13,7 +13,7 @@ export function overviewScene() {
     to: 'now',
   });
 
-  const cards = SLO_DEFINITIONS.map((slo) => buildCardPanels(slo));
+  const cards = getSLODefinitions().map((slo) => buildCardPanels(slo));
   const drilldown = new HeatmapDrilldown();
 
   return new EmbeddedScene({
