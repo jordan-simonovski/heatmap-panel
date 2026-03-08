@@ -59,7 +59,7 @@ func main() {
 	go worker.Run(ctx)
 
 	router := chi.NewRouter()
-	r := apiv1.HandlerFromMux(server, router)
+	r := httpapi.WithCORS(apiv1.HandlerFromMux(server, router))
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           r,

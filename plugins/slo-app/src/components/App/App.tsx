@@ -7,11 +7,49 @@ import { sloDetailPages } from '../../pages/Detail/detailPage';
 import { components } from '../../api/generated/types';
 import { mapSLOToDefinition, SLOControlPlaneClient } from '../../api/sloControlPlane';
 import { setSLODefinitions } from '../../sloDefinitions';
-import { ControlPlanePanel } from '../ControlPlane/ControlPlanePanel';
+import { createControlPlanePage } from '../../pages/ControlPlane/controlPlanePage';
+import { createTeamPages } from '../../pages/Team/teamPage';
+import { createServicePages } from '../../pages/Service/servicePage';
 
-function getSceneApp() {
+function getSceneApp(args: {
+  apiUrl: string;
+  teams: components['schemas']['Team'][];
+  services: components['schemas']['Service'][];
+  slos: components['schemas']['SLO'][];
+  burnEvents: components['schemas']['BurnEvent'][];
+  onRefresh: () => Promise<void>;
+}) {
+  const overviewPage = createOverviewPage({
+    apiUrl: args.apiUrl,
+    teams: args.teams,
+    services: args.services,
+    slos: args.slos,
+    burnEvents: args.burnEvents,
+    onRefresh: args.onRefresh,
+  });
+
   return new SceneApp({
-    pages: [createOverviewPage(), ...sloDetailPages()],
+    pages: [
+      overviewPage,
+      createControlPlanePage({
+        apiUrl: args.apiUrl,
+        teams: args.teams,
+        services: args.services,
+        burnEvents: args.burnEvents,
+        onRefresh: args.onRefresh,
+      }, overviewPage),
+      ...createTeamPages({
+        teams: args.teams,
+        services: args.services,
+        slos: args.slos,
+      }, overviewPage),
+      ...createServicePages({
+        teams: args.teams,
+        services: args.services,
+        slos: args.slos,
+      }, overviewPage),
+      ...sloDetailPages(overviewPage),
+    ],
     urlSyncOptions: {
       updateUrlOnInit: true,
       createBrowserHistorySteps: true,
@@ -24,8 +62,18 @@ function App(props: AppRootProps) {
   const client = useMemo(() => new SLOControlPlaneClient(apiUrl), [apiUrl]);
   const [teams, setTeams] = useState<components['schemas']['Team'][]>([]);
   const [services, setServices] = useState<components['schemas']['Service'][]>([]);
+  const [slos, setSlos] = useState<components['schemas']['SLO'][]>([]);
   const [burnEvents, setBurnEvents] = useState<components['schemas']['BurnEvent'][]>([]);
-  const [scene, setScene] = useState<SceneApp>(() => getSceneApp());
+  const [scene, setScene] = useState<SceneApp>(() =>
+    getSceneApp({
+      apiUrl,
+      teams: [],
+      services: [],
+      slos: [],
+      burnEvents: [],
+      onRefresh: async () => {},
+    })
+  );
 
   const refresh = async () => {
     const [teamItems, serviceItems, sloItems, burnItems] = await Promise.all([
@@ -36,9 +84,19 @@ function App(props: AppRootProps) {
     ]);
     setTeams(teamItems);
     setServices(serviceItems);
+    setSlos(sloItems);
     setBurnEvents(burnItems);
     setSLODefinitions(sloItems.map(mapSLOToDefinition));
-    setScene(getSceneApp());
+    setScene(
+      getSceneApp({
+        apiUrl,
+        teams: teamItems,
+        services: serviceItems,
+        slos: sloItems,
+        burnEvents: burnItems,
+        onRefresh: refresh,
+      })
+    );
   };
 
   useEffect(() => {
@@ -46,9 +104,22 @@ function App(props: AppRootProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client]);
 
+  useEffect(() => {
+    setScene(
+      getSceneApp({
+        apiUrl,
+        teams,
+        services,
+        slos,
+        burnEvents,
+        onRefresh: refresh,
+      })
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiUrl, teams, services, slos, burnEvents]);
+
   return (
     <PluginPropsContext.Provider value={props}>
-      <ControlPlanePanel apiUrl={apiUrl} teams={teams} services={services} burnEvents={burnEvents} onRefresh={refresh} />
       <scene.Component model={scene} />
     </PluginPropsContext.Provider>
   );

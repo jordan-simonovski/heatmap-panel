@@ -255,18 +255,6 @@ func (s *Server) CreateSLO(w http.ResponseWriter, r *http.Request, _ apiv1.Creat
 		writeProblem(w, statusFromError(err), "create_slo_failed", err.Error())
 		return
 	}
-	idk := r.Header.Get("Idempotency-Key")
-	if idk == "" {
-		idk = uuid.NewString()
-	}
-	_ = s.store.EnqueueOutbox(ctx, tx, "slo", created.ID, "slo_created", map[string]any{
-		"serviceId": created.ServiceID.String(),
-		"sloId":     created.ID.String(),
-		"eventType": "burn_started",
-		"value":     0,
-		"threshold": 0,
-		"source":    "control-plane",
-	}, idk)
 	if err := tx.Commit(); err != nil {
 		writeProblem(w, http.StatusInternalServerError, "tx_commit_failed", err.Error())
 		return
@@ -313,18 +301,6 @@ func (s *Server) UpdateSLO(w http.ResponseWriter, r *http.Request, sloId apiv1.S
 		writeProblem(w, statusFromError(err), "update_slo_failed", err.Error())
 		return
 	}
-	idk := r.Header.Get("Idempotency-Key")
-	if idk == "" {
-		idk = uuid.NewString()
-	}
-	_ = s.store.EnqueueOutbox(ctx, tx, "slo", updated.ID, "slo_updated", map[string]any{
-		"serviceId": updated.ServiceID.String(),
-		"sloId":     updated.ID.String(),
-		"eventType": "burn_continued",
-		"value":     0,
-		"threshold": 0,
-		"source":    "control-plane",
-	}, idk)
 	if err := tx.Commit(); err != nil {
 		writeProblem(w, http.StatusInternalServerError, "tx_commit_failed", err.Error())
 		return

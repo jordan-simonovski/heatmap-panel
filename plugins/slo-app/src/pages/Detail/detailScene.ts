@@ -12,6 +12,7 @@ import {
   VariableValueSelectors,
   VizPanel,
 } from '@grafana/scenes';
+import { locationService } from '@grafana/runtime';
 import { CLICKHOUSE_DS } from '../../constants';
 import {
   SLODefinition,
@@ -23,6 +24,7 @@ import {
 import {
   SelectionState,
   AttributeComparisonPanel,
+  RepresentativeTracesPanel,
 } from '@heatmap/shared-comparison';
 
 function buildAdHocWhere(slo: SLODefinition, adHocFilters: AdHocFiltersVariable): string {
@@ -160,14 +162,24 @@ export function detailScene(slo: SLODefinition) {
   const comparisonPanel = new AttributeComparisonPanel({
     datasource: CLICKHOUSE_DS,
   });
+  const representativeTracesPanel = new RepresentativeTracesPanel({
+    datasource: CLICKHOUSE_DS,
+    maxTraces: 12,
+    onTraceSelect: (traceId) => {
+      // Reuse the heatmap app trace details route for now.
+      locationService.push(`/a/heatmap-bubbles-app/trace/${encodeURIComponent(traceId)}`);
+    },
+  });
 
   comparisonPanel.setAdHocVariable(adHocFilters);
+  representativeTracesPanel.setAdHocVariable(adHocFilters);
 
   // Wire selection -> comparison
   selectionState.addActivationHandler(() => {
     const sub = selectionState.subscribeToState((newState, prevState) => {
       if (newState.selection !== prevState.selection) {
         comparisonPanel.setSelection(newState.selection);
+        representativeTracesPanel.setSelection(newState.selection);
       }
     });
     return () => sub.unsubscribe();
@@ -180,6 +192,9 @@ export function detailScene(slo: SLODefinition) {
         refreshDrilldownQuery();
         if (comparisonPanel.state.selection) {
           comparisonPanel.setSelection(comparisonPanel.state.selection);
+        }
+        if (representativeTracesPanel.state.selection) {
+          representativeTracesPanel.setSelection(representativeTracesPanel.state.selection);
         }
       }
     });
@@ -328,6 +343,11 @@ export function detailScene(slo: SLODefinition) {
         new SceneFlexItem({
           minHeight: 400,
           body: comparisonPanel,
+        }),
+        // Bottom: representative trace IDs list
+        new SceneFlexItem({
+          minHeight: 220,
+          body: representativeTracesPanel,
         }),
       ],
     }),

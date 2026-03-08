@@ -254,13 +254,15 @@ func (s *Store) ListSLOs(ctx context.Context, page, pageSize int, serviceID *uui
 		args,
 		func(rows *sql.Rows) (SLO, error) {
 			var slo SLO
+			var desc sql.NullString
 			var canonical []byte
 			if err := rows.Scan(
-				&slo.ID, &slo.ServiceID, &slo.Name, &slo.Description, &slo.Target, &slo.WindowMinutes, &slo.OpenSLO,
+				&slo.ID, &slo.ServiceID, &slo.Name, &desc, &slo.Target, &slo.WindowMinutes, &slo.OpenSLO,
 				&canonical, &slo.DatasourceType, &slo.DatasourceUID, &slo.CreatedAt, &slo.UpdatedAt,
 			); err != nil {
 				return SLO{}, err
 			}
+			slo.Description = nullStringToString(desc)
 			slo.Canonical = decodeJSONMap(canonical)
 			return slo, nil
 		},
@@ -274,6 +276,7 @@ func (s *Store) ListSLOs(ctx context.Context, page, pageSize int, serviceID *uui
 func (s *Store) CreateSLO(ctx context.Context, tx *sql.Tx, slo SLO) (SLO, error) {
 	blob, _ := json.Marshal(metadataOrEmpty(slo.Canonical))
 	var created SLO
+	var desc sql.NullString
 	var canonical []byte
 	err := tx.QueryRowContext(ctx, `
 		INSERT INTO slos (
@@ -283,24 +286,27 @@ func (s *Store) CreateSLO(ctx context.Context, tx *sql.Tx, slo SLO) (SLO, error)
 		RETURNING id, service_id, name, description, target, window_minutes, openslo_yaml, canonical_json,
 		          datasource_type, datasource_uid, created_at, updated_at
 	`, slo.ID, slo.ServiceID, slo.Name, nullableStr(slo.Description), slo.Target, slo.WindowMinutes, slo.OpenSLO, string(blob), slo.DatasourceType, slo.DatasourceUID).Scan(
-		&created.ID, &created.ServiceID, &created.Name, &created.Description, &created.Target, &created.WindowMinutes,
+		&created.ID, &created.ServiceID, &created.Name, &desc, &created.Target, &created.WindowMinutes,
 		&created.OpenSLO, &canonical, &created.DatasourceType, &created.DatasourceUID, &created.CreatedAt, &created.UpdatedAt,
 	)
+	created.Description = nullStringToString(desc)
 	created.Canonical = decodeJSONMap(canonical)
 	return created, err
 }
 
 func (s *Store) GetSLO(ctx context.Context, id uuid.UUID) (SLO, error) {
 	var slo SLO
+	var desc sql.NullString
 	var canonical []byte
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, service_id, name, description, target, window_minutes, openslo_yaml, canonical_json,
 		       datasource_type, datasource_uid, created_at, updated_at
 		FROM slos WHERE id = $1
 	`, id).Scan(
-		&slo.ID, &slo.ServiceID, &slo.Name, &slo.Description, &slo.Target, &slo.WindowMinutes, &slo.OpenSLO, &canonical,
+		&slo.ID, &slo.ServiceID, &slo.Name, &desc, &slo.Target, &slo.WindowMinutes, &slo.OpenSLO, &canonical,
 		&slo.DatasourceType, &slo.DatasourceUID, &slo.CreatedAt, &slo.UpdatedAt,
 	)
+	slo.Description = nullStringToString(desc)
 	slo.Canonical = decodeJSONMap(canonical)
 	return slo, err
 }
@@ -308,6 +314,7 @@ func (s *Store) GetSLO(ctx context.Context, id uuid.UUID) (SLO, error) {
 func (s *Store) UpdateSLO(ctx context.Context, tx *sql.Tx, slo SLO) (SLO, error) {
 	blob, _ := json.Marshal(metadataOrEmpty(slo.Canonical))
 	var updated SLO
+	var desc sql.NullString
 	var canonical []byte
 	err := tx.QueryRowContext(ctx, `
 		UPDATE slos
@@ -317,9 +324,10 @@ func (s *Store) UpdateSLO(ctx context.Context, tx *sql.Tx, slo SLO) (SLO, error)
 		RETURNING id, service_id, name, description, target, window_minutes, openslo_yaml, canonical_json,
 		          datasource_type, datasource_uid, created_at, updated_at
 	`, slo.ID, slo.Name, nullableStr(slo.Description), slo.Target, slo.WindowMinutes, slo.OpenSLO, string(blob), slo.DatasourceType, slo.DatasourceUID).Scan(
-		&updated.ID, &updated.ServiceID, &updated.Name, &updated.Description, &updated.Target, &updated.WindowMinutes,
+		&updated.ID, &updated.ServiceID, &updated.Name, &desc, &updated.Target, &updated.WindowMinutes,
 		&updated.OpenSLO, &canonical, &updated.DatasourceType, &updated.DatasourceUID, &updated.CreatedAt, &updated.UpdatedAt,
 	)
+	updated.Description = nullStringToString(desc)
 	updated.Canonical = decodeJSONMap(canonical)
 	return updated, err
 }
@@ -401,6 +409,13 @@ func decodeJSONMap(v []byte) map[string]any {
 		return map[string]any{}
 	}
 	return m
+}
+
+func nullStringToString(v sql.NullString) string {
+	if !v.Valid {
+		return ""
+	}
+	return v.String
 }
 
 func metadataOrEmpty(m map[string]any) map[string]any {

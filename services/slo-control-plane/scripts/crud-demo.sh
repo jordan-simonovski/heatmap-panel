@@ -184,13 +184,13 @@ service_cmd() {
   local action="${1:-}"
   case "${action}" in
     create)
-      local name="$2" slug="$3" owner_team_id="$4" metadata="${5:-{}}"
+      local name="$2" slug="$3" owner_team_id="$4" metadata="${5:-'{}'}"
       request POST "/v1/services" "$(jq -nc --arg name "${name}" --arg slug "${slug}" --arg ownerTeamId "${owner_team_id}" --argjson metadata "${metadata}" '{name:$name,slug:$slug,ownerTeamId:$ownerTeamId,metadata:$metadata}')"
       ;;
     list) request GET "/v1/services" ;;
     get) request GET "/v1/services/$2" ;;
     update)
-      local id="$2" name="$3" slug="$4" owner_team_id="$5" metadata="${6:-{}}"
+      local id="$2" name="$3" slug="$4" owner_team_id="$5" metadata="${6:-'{}'}"
       request PUT "/v1/services/${id}" "$(jq -nc --arg name "${name}" --arg slug "${slug}" --arg ownerTeamId "${owner_team_id}" --argjson metadata "${metadata}" '{name:$name,slug:$slug,ownerTeamId:$ownerTeamId,metadata:$metadata}')"
       ;;
     delete) request DELETE "/v1/services/$2" ;;
@@ -227,23 +227,55 @@ burn_cmd() {
 seed_examples() {
   echo "Seeding trace-generator-based examples into ${API_V1}..."
 
+  local seed_suffix
+  seed_suffix="$(date +%s)"
+  local team_slug="platform-team-${seed_suffix}"
+  local service_slug="api-gateway-${seed_suffix}"
+
   local team service slo1 slo2 slo3 slo4
-  team="$(team_cmd create "platform-team" "platform-team")"
+  team="$(team_cmd create "platform-team-${seed_suffix}" "${team_slug}")" || {
+    echo "team seed failed" >&2
+    exit 1
+  }
   local team_id
   team_id="$(echo "${team}" | jq -r '.id')"
+  if [[ -z "${team_id}" || "${team_id}" == "null" ]]; then
+    echo "team seed failed: missing team id" >&2
+    exit 1
+  fi
 
-  service="$(service_cmd create "api-gateway" "api-gateway" "${team_id}" '{"source":"trace-generator","owner":"platform"}')"
+  service="$(service_cmd create "api-gateway-${seed_suffix}" "${service_slug}" "${team_id}" '{"source":"trace-generator","owner":"platform"}')" || {
+    echo "service seed failed" >&2
+    exit 1
+  }
   local service_id
   service_id="$(echo "${service}" | jq -r '.id')"
+  if [[ -z "${service_id}" || "${service_id}" == "null" ]]; then
+    echo "service seed failed: missing service id" >&2
+    exit 1
+  fi
 
-  slo1="$(slo_cmd create "${service_id}" "checkout-latency" "0.99" "30" "clickhouse" "/cart/checkout" "latency" "500")"
-  slo2="$(slo_cmd create "${service_id}" "orders-error-rate" "0.99" "30" "clickhouse" "/api/orders" "error_rate" "0.02")"
-  slo3="$(slo_cmd create "${service_id}" "search-error-rate" "0.99" "30" "clickhouse" "/api/search" "error_rate" "0.01")"
-  slo4="$(slo_cmd create "${service_id}" "auth-latency" "0.995" "30" "clickhouse" "/api/auth" "latency" "300")"
+  slo1="$(slo_cmd create "${service_id}" "checkout-latency-${seed_suffix}" "0.99" "30" "clickhouse" "/cart/checkout" "latency" "500")" || {
+    echo "slo1 seed failed" >&2
+    exit 1
+  }
+  slo2="$(slo_cmd create "${service_id}" "orders-error-rate-${seed_suffix}" "0.99" "30" "clickhouse" "/api/orders" "error_rate" "0.02")" || {
+    echo "slo2 seed failed" >&2
+    exit 1
+  }
+  slo3="$(slo_cmd create "${service_id}" "search-error-rate-${seed_suffix}" "0.99" "30" "clickhouse" "/api/search" "error_rate" "0.01")" || {
+    echo "slo3 seed failed" >&2
+    exit 1
+  }
+  slo4="$(slo_cmd create "${service_id}" "auth-latency-${seed_suffix}" "0.995" "30" "clickhouse" "/api/auth" "latency" "300")" || {
+    echo "slo4 seed failed" >&2
+    exit 1
+  }
 
   jq -nc \
     --arg teamId "${team_id}" \
     --arg serviceId "${service_id}" \
+    --arg seedSuffix "${seed_suffix}" \
     --arg slo1Id "$(echo "${slo1}" | jq -r '.id')" \
     --arg slo2Id "$(echo "${slo2}" | jq -r '.id')" \
     --arg slo3Id "$(echo "${slo3}" | jq -r '.id')" \
@@ -251,6 +283,7 @@ seed_examples() {
     '{
       teamId: $teamId,
       serviceId: $serviceId,
+      seedSuffix: $seedSuffix,
       sloIds: [$slo1Id, $slo2Id, $slo3Id, $slo4Id]
     }' > "${STATE_FILE}"
 

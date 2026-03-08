@@ -1,0 +1,12 @@
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /out/slo-evaluator ./cmd/slo-evaluator
+
+FROM alpine:3.22
+WORKDIR /app
+COPY --from=build /out/slo-evaluator /usr/local/bin/slo-evaluator
+COPY migrations ./migrations
+ENTRYPOINT ["/usr/local/bin/slo-evaluator"]

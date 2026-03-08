@@ -30,6 +30,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -248,6 +249,81 @@ type traceAttrs struct {
 	route, method, region, buildID, platform, featureFlag, tenant, uid, pod string
 }
 
+type burnProfileMode string
+
+const (
+	burnProfileNone          burnProfileMode = "none"
+	burnProfileDeterministic burnProfileMode = "deterministic"
+)
+
+type burnLevel string
+
+const (
+	burnLevelSlow  burnLevel = "slow"
+	burnLevelSteep burnLevel = "steep"
+)
+
+type burnProfileConfig struct {
+	Mode           burnProfileMode
+	SteepRoute     string
+	SteepErrorRate float64
+	SlowRoute      string
+	SlowErrorRate  float64
+}
+
+func loadBurnProfileConfigFromEnv() burnProfileConfig {
+	mode := burnProfileMode(strings.ToLower(strings.TrimSpace(os.Getenv("BURN_PROFILE"))))
+	if mode == "" {
+		mode = burnProfileNone
+	}
+	return burnProfileConfig{
+		Mode:           mode,
+		SteepRoute:     stringEnv("BURN_STEEP_ROUTE", "/cart/checkout"),
+		SteepErrorRate: boundedFloatEnv("BURN_STEEP_ERROR_RATE", 0.08),
+		SlowRoute:      stringEnv("BURN_SLOW_ROUTE", "/api/auth"),
+		SlowErrorRate:  boundedFloatEnv("BURN_SLOW_ERROR_RATE", 0.003),
+	}
+}
+
+func stringEnv(key, fallback string) string {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	return v
+}
+
+func boundedFloatEnv(key string, fallback float64) float64 {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return fallback
+	}
+	if n < 0 {
+		return 0
+	}
+	if n > 1 {
+		return 1
+	}
+	return n
+}
+
+func deterministicBurnDecision(route string, cfg burnProfileConfig, sample float64) (int, burnLevel, bool) {
+	if cfg.Mode != burnProfileDeterministic {
+		return 0, "", false
+	}
+	if route == cfg.SteepRoute && sample < cfg.SteepErrorRate {
+		return 504, burnLevelSteep, true
+	}
+	if route == cfg.SlowRoute && sample < cfg.SlowErrorRate {
+		return 503, burnLevelSlow, true
+	}
+	return 0, "", false
+}
+
 func detectScenario(a traceAttrs) scenario {
 	svc := routeToService(a.route)
 
@@ -303,7 +379,7 @@ func pickNormalStatusCode() int {
 
 // ── Trace emission ──────────────────────────────────────────────────
 
-func emitTrace(ctx context.Context, st *serviceTracers, ts time.Time) {
+func emitTrace(ctx context.Context, st *serviceTracers, ts time.Time, burnCfg burnProfileConfig) {
 	a := traceAttrs{
 		route:       pickWeighted(routes),
 		method:      pickWeighted(methods),
@@ -332,6 +408,11 @@ func emitTrace(ctx context.Context, st *serviceTracers, ts time.Time) {
 		attribute.String("k8s.pod.name", a.pod),
 	}
 
+	if statusCode, level, ok := deterministicBurnDecision(a.route, burnCfg, rand.Float64()); ok {
+		emitDeterministicBurnTrace(ctx, st, ts, a, commonAttrs, svc, statusCode, level)
+		return
+	}
+
 	switch sc {
 	case scenarioSlowCheckout:
 		emitSlowCheckout(ctx, st, ts, a, commonAttrs)
@@ -352,6 +433,49 @@ func emitTrace(ctx context.Context, st *serviceTracers, ts time.Time) {
 	default:
 		emitNormalTrace(ctx, st, ts, a, commonAttrs, svc)
 	}
+}
+
+func emitDeterministicBurnTrace(
+	ctx context.Context,
+	st *serviceTracers,
+	ts time.Time,
+	a traceAttrs,
+	common []attribute.KeyValue,
+	svc string,
+	statusCode int,
+	level burnLevel,
+) {
+	rootDur := gaussianDuration(120, 35)
+	svcDur := gaussianDuration(80, 25)
+	if level == burnLevelSteep {
+		rootDur = gaussianDuration(900, 180)
+		svcDur = gaussianDuration(700, 150)
+	}
+
+	rootCtx, rootSpan := st.tracer("api-gateway").Start(ctx, a.method+" "+a.route,
+		trace.WithTimestamp(ts),
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(append(common,
+			semconv.ServiceName("api-gateway"),
+			attribute.Int("http.status_code", statusCode),
+			attribute.String("app.burn_level", string(level)),
+		)...),
+	)
+	markSpanError(rootSpan, "BurnProfileError", "deterministic burn profile")
+
+	svcStart := ts.Add(jitter())
+	svcCtx, svcSpan := st.tracer(svc).Start(rootCtx, svc+".handle",
+		trace.WithTimestamp(svcStart),
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(append(svcAttrs(svc, a), attribute.String("app.burn_level", string(level)))...),
+	)
+	markSpanError(svcSpan, "BurnProfileError", "deterministic burn profile")
+
+	dbSys := serviceToDBSystem(svc)
+	emitNormalLeafSpan(st, svcCtx, svc, dbSys, a, svcStart.Add(jitter()))
+
+	svcSpan.End(trace.WithTimestamp(svcStart.Add(svcDur)))
+	rootSpan.End(trace.WithTimestamp(ts.Add(rootDur)))
 }
 
 // ── S1: Slow Checkout — feature flag + EU, N+1 queries ──────────────
@@ -930,6 +1054,15 @@ func main() {
 	}
 
 	st := newServiceTracers(ctx, exporter)
+	burnCfg := loadBurnProfileConfigFromEnv()
+	log.Printf(
+		"burn profile mode=%s steep=%s@%.4f slow=%s@%.4f",
+		burnCfg.Mode,
+		burnCfg.SteepRoute,
+		burnCfg.SteepErrorRate,
+		burnCfg.SlowRoute,
+		burnCfg.SlowErrorRate,
+	)
 	defer func() {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
@@ -942,7 +1075,7 @@ func main() {
 	backfillTraces := 50 * 60 * 10 // 50/sec * 600 sec
 	for i := 0; i < backfillTraces; i++ {
 		ts := backfillStart.Add(time.Duration(rand.Int63n(int64(10 * time.Minute))))
-		emitTrace(ctx, st, ts)
+		emitTrace(ctx, st, ts, burnCfg)
 	}
 	log.Println("backfill complete, starting live emission...")
 
@@ -956,7 +1089,7 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			emitTrace(ctx, st, time.Now())
+			emitTrace(ctx, st, time.Now(), burnCfg)
 		case <-sigCh:
 			log.Println("shutting down trace generator...")
 			cancel()

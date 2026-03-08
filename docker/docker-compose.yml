@@ -60,6 +60,11 @@ services:
     environment:
       - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
       - OTEL_EXPORTER_OTLP_INSECURE=true
+      - BURN_PROFILE=deterministic
+      - BURN_STEEP_ROUTE=/cart/checkout
+      - BURN_STEEP_ERROR_RATE=0.08
+      - BURN_SLOW_ROUTE=/api/auth
+      - BURN_SLOW_ERROR_RATE=0.003
     depends_on:
       - otel-collector
     networks:
@@ -86,6 +91,30 @@ services:
     networks:
       - heatmap
 
+  slo-evaluator:
+    build:
+      context: ../services/slo-control-plane
+      dockerfile: Dockerfile.evaluator
+    container_name: slo-evaluator
+    environment:
+      SLO_API_POSTGRES_DSN: "postgres://slo:slo@postgres:5432/slo_control_plane?sslmode=disable"
+      SLO_API_CLICKHOUSE_DSN: "clickhouse://clickhouse-server:9000/default"
+      SLO_API_EVALUATOR_INTERVAL: "30s"
+      SLO_API_EVALUATOR_CONTINUE_INTERVAL: "5m"
+      SLO_API_EVALUATOR_FAST_WINDOW_MIN: "5"
+      SLO_API_EVALUATOR_SLOW_WINDOW_MIN: "60"
+      SLO_API_EVALUATOR_FAST_BURN_RATE: "14.4"
+      SLO_API_EVALUATOR_SLOW_BURN_RATE: "2.0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse-server:
+        condition: service_healthy
+      slo-control-plane:
+        condition: service_started
+    networks:
+      - heatmap
+
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -107,6 +136,8 @@ services:
       clickhouse-server:
         condition: service_healthy
       slo-control-plane:
+        condition: service_started
+      slo-evaluator:
         condition: service_started
     networks:
       - heatmap

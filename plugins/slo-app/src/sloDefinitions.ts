@@ -112,7 +112,7 @@ ORDER BY time`;
 export function complianceSql(slo: SLODefinition): string {
   if (slo.type === 'latency') {
     return `SELECT
-  1 - (countIf(p99_ms > ${slo.thresholdMs}) / count()) AS compliance
+  if(count() = 0, 1.0, 1 - (countIf(p99_ms > ${slo.thresholdMs}) / count())) AS compliance
 FROM (
   SELECT quantile(0.99)(Duration / 1000000) AS p99_ms
   FROM otel_traces
@@ -124,7 +124,7 @@ FROM (
   }
   // error_rate
   return `SELECT
-  1 - (countIf(err_rate > ${slo.thresholdRate}) / count()) AS compliance
+  if(count() = 0, 1.0, 1 - (countIf(err_rate > ${slo.thresholdRate}) / count())) AS compliance
 FROM (
   SELECT countIf(toInt32OrZero(SpanAttributes['http.status_code']) >= 500) / count() AS err_rate
   FROM otel_traces
@@ -154,6 +154,6 @@ export function errorBudgetSql(slo: SLODefinition): string {
 
   const threshold = slo.type === 'latency' ? slo.thresholdMs : slo.thresholdRate;
   return `SELECT
-  (1 - (countIf(metric > ${threshold}) / count())) - ${slo.target} AS error_budget
+  (if(count() = 0, 1.0, 1 - (countIf(metric > ${threshold}) / count()))) - ${slo.target} AS error_budget
 FROM (${inner})`;
 }

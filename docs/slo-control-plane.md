@@ -13,10 +13,13 @@ This repository now includes a standalone self-hostable control-plane service:
 
 ## Burn events flow
 
-1. API writes domain data and outbox event in one Postgres transaction.
-2. Background worker claims pending outbox rows.
-3. Worker writes burn rows into ClickHouse table `slo_burn_events`.
-4. Worker marks outbox entries delivered (or retries with backoff).
+1. Evaluator periodically computes SLO compliance from ClickHouse traces.
+2. Evaluator classifies each burn as `fast` or `slow` (multi-window burn-rate), then writes transition/continue events into Postgres outbox atomically with `slo_burn_state`.
+3. Outbox worker claims pending rows.
+4. Worker writes burn rows into ClickHouse table `slo_burn_events`.
+5. Worker marks outbox entries delivered (or retries with backoff).
+
+`slo-control-plane` and `slo-evaluator` are separate binaries so evaluator can be moved to a dedicated deployment/CronJob later.
 
 ## Frontend integration
 

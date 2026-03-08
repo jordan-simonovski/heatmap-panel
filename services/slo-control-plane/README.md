@@ -8,11 +8,24 @@ Standalone Go application for SLO/team/service state management.
 - Postgres state for `teams`, `services`, `slos`.
 - Transactional outbox with background worker.
 - Burn event sink into ClickHouse table `slo_burn_events`.
+- Standalone SLO evaluator component (`cmd/slo-evaluator`) that emits burn transitions/continues.
 
 ## Run locally
 
 ```bash
 go run ./cmd/slo-control-plane
+```
+
+Run evaluator in loop:
+
+```bash
+go run ./cmd/slo-evaluator
+```
+
+Run one-shot evaluator pass (CronJob-friendly):
+
+```bash
+go run ./cmd/slo-evaluator --once
 ```
 
 Environment variables:
@@ -22,6 +35,12 @@ Environment variables:
 - `SLO_API_CLICKHOUSE_DSN` (required)
 - `SLO_API_OUTBOX_POLL_INTERVAL` (default `5s`)
 - `SLO_API_OUTBOX_BATCH_SIZE` (default `100`)
+- `SLO_API_EVALUATOR_INTERVAL` (default `30s`)
+- `SLO_API_EVALUATOR_CONTINUE_INTERVAL` (default `5m`)
+- `SLO_API_EVALUATOR_FAST_WINDOW_MIN` (default `5`)
+- `SLO_API_EVALUATOR_SLOW_WINDOW_MIN` (default `60`)
+- `SLO_API_EVALUATOR_FAST_BURN_RATE` (default `14.4`)
+- `SLO_API_EVALUATOR_SLOW_BURN_RATE` (default `2.0`)
 
 ## Seed and CRUD test script
 
