@@ -1,6 +1,7 @@
 .PHONY: install build dev up down restart clean \
        typecheck lint lint-fix test test-ci e2e \
-       build-panel build-timeseries build-app build-slo build-go \
+       build-panel build-timeseries build-app build-slo build-go build-slo-control-plane \
+       openapi-generate openapi-lint \
        logs logs-grafana logs-clickhouse logs-collector logs-generator
 
 # ── Install ──────────────────────────────────────────────────────────
@@ -25,6 +26,9 @@ build-slo: ## Build the SLO Scenes app plugin
 
 build-go: ## Build the Go trace generator (local binary)
 	cd trace-generator && go build -o bin/trace-generator .
+
+build-slo-control-plane: ## Build the standalone SLO control-plane
+	cd services/slo-control-plane && go build ./...
 
 # ── Dev ──────────────────────────────────────────────────────────────
 dev: ## Watch-build all plugins
@@ -64,6 +68,16 @@ lint: ## Run ESLint on all plugins
 	npm run lint --workspace=plugins/timeseries-selection-panel
 	npm run lint --workspace=plugins/heatmap-app
 	npm run lint --workspace=plugins/slo-app
+	cd services/slo-control-plane && go test ./...
+
+openapi-generate: ## Generate Go + TypeScript API bindings
+	mkdir -p services/slo-control-plane/internal/api
+	mkdir -p plugins/slo-app/src/api/generated
+	cd . && go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen -generate types,chi-server,spec -package apiv1 api/openapi/slo-control-plane.openapi.yaml > services/slo-control-plane/internal/api/apiv1.gen.go
+	npx openapi-typescript api/openapi/slo-control-plane.openapi.yaml -o plugins/slo-app/src/api/generated/types.ts
+
+openapi-lint: ## Lint OpenAPI spec
+	npx @redocly/cli lint --config .redocly.yaml api/openapi/slo-control-plane.openapi.yaml
 
 lint-fix: ## Auto-fix lint + prettier issues
 	npm run lint:fix --workspace=plugins/heatmap-panel

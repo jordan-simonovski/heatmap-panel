@@ -1,0 +1,594 @@
+openapi: 3.1.0
+info:
+  title: SLO Control Plane API
+  version: 0.1.0
+  description: >
+    Contract-first API for teams, services, SLO definitions, and burn events.
+servers:
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: health
+  - name: teams
+  - name: services
+  - name: slos
+  - name: burn-events
+paths:
+  /health:
+    get:
+      tags: [health]
+      operationId: getHealth
+      responses:
+        '200':
+          description: Liveness check
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /ready:
+    get:
+      tags: [health]
+      operationId: getReady
+      responses:
+        '200':
+          description: Readiness check
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '503':
+          $ref: '#/components/responses/ProblemResponse'
+  /v1/teams:
+    get:
+      tags: [teams]
+      operationId: listTeams
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Paginated list of teams.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamListResponse'
+    post:
+      tags: [teams]
+      operationId: createTeam
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTeamRequest'
+      responses:
+        '201':
+          description: Team created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '400':
+          $ref: '#/components/responses/ProblemResponse'
+        '409':
+          $ref: '#/components/responses/ProblemResponse'
+  /v1/teams/{teamId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      tags: [teams]
+      operationId: getTeam
+      responses:
+        '200':
+          description: Team found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '404':
+          $ref: '#/components/responses/ProblemResponse'
+    put:
+      tags: [teams]
+      operationId: updateTeam
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTeamRequest'
+      responses:
+        '200':
+          description: Team updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '400':
+          $ref: '#/components/responses/ProblemResponse'
+        '404':
+          $ref: '#/components/responses/ProblemResponse'
+        '409':
+          $ref: '#/components/responses/ProblemResponse'
+    delete:
+      tags: [teams]
+      operationId: deleteTeam
+      responses:
+        '204':
+          description: Team deleted.
+        '404':
+          $ref: '#/components/responses/ProblemResponse'
+  /v1/services:
+    get:
+      tags: [services]
+      operationId: listServices
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: ownerTeamId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Paginated list of services.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceListResponse'
+    post:
+      tags: [services]
+      operationId: createService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateServiceRequest'
+      responses:
+        '201':
+          description: Service created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/ProblemResponse'
+        '404':
+          $ref: '#/components/responses/ProblemResponse'
+        '409':
+          $ref: '#/components/responses/ProblemResponse'
+  /v1/services/{serviceId}:
+    parameters:
+      - $ref: '#/components/parameters/ServiceId'
+    get:
+      tags: [services]
+      operationId: getService
+      responses:
+        '200':
+          description: Service found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '404':
+          $ref: '#/components/responses/ProblemResponse'
+    put:
+      tags: [services]
+      operationId: updateService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateServiceRequest'
+      responses:
+        '200':
+          description: Service updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/ProblemResponse'
+        '404':
+          $ref: '#/components/responses/ProblemResponse'
+        '409':
+          $ref: '#/components/responses/ProblemResponse'
+    delete:
+      tags: [services]
+      operationId: deleteService
+      responses:
+        '204':
+          description: Service deleted.
+        '404':
+          $ref: '#/components/responses/ProblemResponse'
+  /v1/slos:
+    get:
+      tags: [slos]
+      operationId: listSLOs
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: serviceId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Paginated list of SLOs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SLOListResponse'
+    post:
+      tags: [slos]
+      operationId: createSLO
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSLORequest'
+      responses:
+        '201':
+          description: SLO created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SLO'
+        '400':
+          $ref: '#/components/responses/ProblemResponse'
+        '404':
+          $ref: '#/components/responses/ProblemResponse'
+        '409':
+          $ref: '#/components/responses/ProblemResponse'
+  /v1/slos/{sloId}:
+    parameters:
+      - $ref: '#/components/parameters/SloId'
+    get:
+      tags: [slos]
+      operationId: getSLO
+      responses:
+        '200':
+          description: SLO found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SLO'
+        '404':
+          $ref: '#/components/responses/ProblemResponse'
+    put:
+      tags: [slos]
+      operationId: updateSLO
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSLORequest'
+      responses:
+        '200':
+          description: SLO updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SLO'
+        '400':
+          $ref: '#/components/responses/ProblemResponse'
+        '404':
+          $ref: '#/components/responses/ProblemResponse'
+        '409':
+          $ref: '#/components/responses/ProblemResponse'
+    delete:
+      tags: [slos]
+      operationId: deleteSLO
+      responses:
+        '204':
+          description: SLO deleted.
+        '404':
+          $ref: '#/components/responses/ProblemResponse'
+  /v1/burn-events:
+    get:
+      tags: [burn-events]
+      operationId: listBurnEvents
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: serviceId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: sloId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Paginated burn events.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BurnEventListResponse'
+components:
+  parameters:
+    TeamId:
+      in: path
+      name: teamId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ServiceId:
+      in: path
+      name: serviceId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SloId:
+      in: path
+      name: sloId
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Page:
+      in: query
+      name: page
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      in: query
+      name: pageSize
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: false
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+  responses:
+    ProblemResponse:
+      description: Problem details response.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    ReadyResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ready]
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status, code, detail]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: string
+        detail:
+          type: string
+        instance:
+          type: string
+    Team:
+      type: object
+      additionalProperties: false
+      required: [id, name, slug, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 128 }
+        slug: { type: string, minLength: 1, maxLength: 128 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Service:
+      type: object
+      additionalProperties: false
+      required: [id, name, slug, ownerTeamId, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 128 }
+        slug: { type: string, minLength: 1, maxLength: 128 }
+        ownerTeamId: { type: string, format: uuid }
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SLO:
+      type: object
+      additionalProperties: false
+      required:
+        [id, serviceId, name, target, windowMinutes, openslo, datasourceType, datasourceUid, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        serviceId: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 128 }
+        description: { type: string }
+        target: { type: number, minimum: 0, maximum: 1 }
+        windowMinutes: { type: integer, minimum: 1 }
+        openslo: { type: string, minLength: 1 }
+        canonical:
+          type: object
+          additionalProperties: true
+        datasourceType:
+          type: string
+          enum: [clickhouse, prometheus]
+        datasourceUid:
+          type: string
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    BurnEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [id, serviceId, sloId, eventType, value, threshold, observedAt, source, idempotencyKey]
+      properties:
+        id: { type: string, format: uuid }
+        serviceId: { type: string, format: uuid }
+        sloId: { type: string, format: uuid }
+        eventType:
+          type: string
+          enum: [burn_started, burn_continued, burn_resolved]
+        value: { type: number }
+        threshold: { type: number }
+        observedAt: { type: string, format: date-time }
+        source: { type: string }
+        idempotencyKey: { type: string }
+    Pagination:
+      type: object
+      additionalProperties: false
+      required: [page, pageSize, total]
+      properties:
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0 }
+    TeamListResponse:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Team' }
+        page: { $ref: '#/components/schemas/Pagination' }
+    ServiceListResponse:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Service' }
+        page: { $ref: '#/components/schemas/Pagination' }
+    SLOListResponse:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SLO' }
+        page: { $ref: '#/components/schemas/Pagination' }
+    BurnEventListResponse:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BurnEvent' }
+        page: { $ref: '#/components/schemas/Pagination' }
+    CreateTeamRequest:
+      type: object
+      additionalProperties: false
+      required: [name, slug]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        slug: { type: string, minLength: 1, maxLength: 128 }
+    UpdateTeamRequest:
+      type: object
+      additionalProperties: false
+      required: [name, slug]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        slug: { type: string, minLength: 1, maxLength: 128 }
+    CreateServiceRequest:
+      type: object
+      additionalProperties: false
+      required: [name, slug, ownerTeamId]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        slug: { type: string, minLength: 1, maxLength: 128 }
+        ownerTeamId: { type: string, format: uuid }
+        metadata:
+          type: object
+          additionalProperties: true
+    UpdateServiceRequest:
+      type: object
+      additionalProperties: false
+      required: [name, slug, ownerTeamId]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        slug: { type: string, minLength: 1, maxLength: 128 }
+        ownerTeamId: { type: string, format: uuid }
+        metadata:
+          type: object
+          additionalProperties: true
+    CreateSLORequest:
+      type: object
+      additionalProperties: false
+      required: [serviceId, name, target, windowMinutes, openslo, datasourceType, datasourceUid]
+      properties:
+        serviceId: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 128 }
+        description: { type: string }
+        target: { type: number, minimum: 0, maximum: 1 }
+        windowMinutes: { type: integer, minimum: 1 }
+        openslo: { type: string, minLength: 1 }
+        datasourceType:
+          type: string
+          enum: [clickhouse, prometheus]
+        datasourceUid: { type: string, minLength: 1 }
+    UpdateSLORequest:
+      type: object
+      additionalProperties: false
+      required: [name, target, windowMinutes, openslo, datasourceType, datasourceUid]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        description: { type: string }
+        target: { type: number, minimum: 0, maximum: 1 }
+        windowMinutes: { type: integer, minimum: 1 }
+        openslo: { type: string, minLength: 1 }
+        datasourceType:
+          type: string
+          enum: [clickhouse, prometheus]
+        datasourceUid: { type: string, minLength: 1 }

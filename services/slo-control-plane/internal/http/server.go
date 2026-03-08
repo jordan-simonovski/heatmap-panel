@@ -1,0 +1,466 @@
+package httpapi
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"net/http"
+	"strings"
+
+	"github.com/google/uuid"
+
+	apiv1 "github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/api"
+	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/store"
+)
+
+type Server struct {
+	store *store.Store
+}
+
+func NewServer(st *store.Store) *Server {
+	return &Server{store: st}
+}
+
+func (s *Server) GetHealth(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, apiv1.HealthResponse{Status: apiv1.Ok})
+}
+
+func (s *Server) GetReady(w http.ResponseWriter, _ *http.Request) {
+	if err := s.store.DB().Ping(); err != nil {
+		writeProblem(w, http.StatusServiceUnavailable, "db_unavailable", "database unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, apiv1.ReadyResponse{Status: apiv1.Ready})
+}
+
+func (s *Server) ListTeams(w http.ResponseWriter, _ *http.Request, params apiv1.ListTeamsParams) {
+	page, size := pagination(params.Page, params.PageSize)
+	items, pg, err := s.store.ListTeams(context.Background(), page, size)
+	if err != nil {
+		writeProblem(w, http.StatusInternalServerError, "list_teams_failed", err.Error())
+		return
+	}
+	resp := apiv1.TeamListResponse{
+		Items: make([]apiv1.Team, 0, len(items)),
+		Page:  apiv1.Pagination{Page: pg.Page, PageSize: pg.PageSize, Total: pg.Total},
+	}
+	for _, t := range items {
+		resp.Items = append(resp.Items, apiv1.Team{
+			Id:        t.ID,
+			Name:      t.Name,
+			Slug:      t.Slug,
+			CreatedAt: t.CreatedAt,
+			UpdatedAt: t.UpdatedAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) CreateTeam(w http.ResponseWriter, r *http.Request) {
+	var req apiv1.CreateTeamRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
+		return
+	}
+	team, err := s.store.CreateTeam(context.Background(), uuid.New(), strings.TrimSpace(req.Name), strings.TrimSpace(req.Slug))
+	if err != nil {
+		writeProblem(w, statusFromError(err), "create_team_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, apiv1.Team{
+		Id:        team.ID,
+		Name:      team.Name,
+		Slug:      team.Slug,
+		CreatedAt: team.CreatedAt,
+		UpdatedAt: team.UpdatedAt,
+	})
+}
+
+func (s *Server) GetTeam(w http.ResponseWriter, _ *http.Request, teamId apiv1.TeamId) {
+	team, err := s.store.GetTeam(context.Background(), uuid.UUID(teamId))
+	if err != nil {
+		writeProblem(w, statusFromError(err), "team_not_found", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, apiv1.Team{
+		Id:        team.ID,
+		Name:      team.Name,
+		Slug:      team.Slug,
+		CreatedAt: team.CreatedAt,
+		UpdatedAt: team.UpdatedAt,
+	})
+}
+
+func (s *Server) UpdateTeam(w http.ResponseWriter, r *http.Request, teamId apiv1.TeamId) {
+	var req apiv1.UpdateTeamRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
+		return
+	}
+	team, err := s.store.UpdateTeam(context.Background(), uuid.UUID(teamId), strings.TrimSpace(req.Name), strings.TrimSpace(req.Slug))
+	if err != nil {
+		writeProblem(w, statusFromError(err), "update_team_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, apiv1.Team{
+		Id:        team.ID,
+		Name:      team.Name,
+		Slug:      team.Slug,
+		CreatedAt: team.CreatedAt,
+		UpdatedAt: team.UpdatedAt,
+	})
+}
+
+func (s *Server) DeleteTeam(w http.ResponseWriter, _ *http.Request, teamId apiv1.TeamId) {
+	if err := s.store.DeleteTeam(context.Background(), uuid.UUID(teamId)); err != nil {
+		writeProblem(w, statusFromError(err), "delete_team_failed", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) ListServices(w http.ResponseWriter, _ *http.Request, params apiv1.ListServicesParams) {
+	page, size := pagination(params.Page, params.PageSize)
+	var owner *uuid.UUID
+	if params.OwnerTeamId != nil {
+		id := uuid.UUID(*params.OwnerTeamId)
+		owner = &id
+	}
+	items, pg, err := s.store.ListServices(context.Background(), page, size, owner)
+	if err != nil {
+		writeProblem(w, http.StatusInternalServerError, "list_services_failed", err.Error())
+		return
+	}
+	resp := apiv1.ServiceListResponse{
+		Items: make([]apiv1.Service, 0, len(items)),
+		Page:  apiv1.Pagination{Page: pg.Page, PageSize: pg.PageSize, Total: pg.Total},
+	}
+	for _, srv := range items {
+		md := srv.Metadata
+		resp.Items = append(resp.Items, apiv1.Service{
+			Id:          srv.ID,
+			Name:        srv.Name,
+			Slug:        srv.Slug,
+			OwnerTeamId: srv.OwnerTeamID,
+			Metadata:    &md,
+			CreatedAt:   srv.CreatedAt,
+			UpdatedAt:   srv.UpdatedAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) CreateService(w http.ResponseWriter, r *http.Request) {
+	var req apiv1.CreateServiceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
+		return
+	}
+	metadata := map[string]any{}
+	if req.Metadata != nil {
+		metadata = *req.Metadata
+	}
+	srv, err := s.store.CreateService(context.Background(), uuid.New(), strings.TrimSpace(req.Name), strings.TrimSpace(req.Slug), uuid.UUID(req.OwnerTeamId), metadata)
+	if err != nil {
+		writeProblem(w, statusFromError(err), "create_service_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, serviceToAPI(srv))
+}
+
+func (s *Server) GetService(w http.ResponseWriter, _ *http.Request, serviceId apiv1.ServiceId) {
+	srv, err := s.store.GetService(context.Background(), uuid.UUID(serviceId))
+	if err != nil {
+		writeProblem(w, statusFromError(err), "service_not_found", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, serviceToAPI(srv))
+}
+
+func (s *Server) UpdateService(w http.ResponseWriter, r *http.Request, serviceId apiv1.ServiceId) {
+	var req apiv1.UpdateServiceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
+		return
+	}
+	metadata := map[string]any{}
+	if req.Metadata != nil {
+		metadata = *req.Metadata
+	}
+	srv, err := s.store.UpdateService(context.Background(), uuid.UUID(serviceId), strings.TrimSpace(req.Name), strings.TrimSpace(req.Slug), uuid.UUID(req.OwnerTeamId), metadata)
+	if err != nil {
+		writeProblem(w, statusFromError(err), "update_service_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, serviceToAPI(srv))
+}
+
+func (s *Server) DeleteService(w http.ResponseWriter, _ *http.Request, serviceId apiv1.ServiceId) {
+	if err := s.store.DeleteService(context.Background(), uuid.UUID(serviceId)); err != nil {
+		writeProblem(w, statusFromError(err), "delete_service_failed", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) ListSLOs(w http.ResponseWriter, _ *http.Request, params apiv1.ListSLOsParams) {
+	page, size := pagination(params.Page, params.PageSize)
+	var serviceID *uuid.UUID
+	if params.ServiceId != nil {
+		id := uuid.UUID(*params.ServiceId)
+		serviceID = &id
+	}
+	items, pg, err := s.store.ListSLOs(context.Background(), page, size, serviceID)
+	if err != nil {
+		writeProblem(w, http.StatusInternalServerError, "list_slos_failed", err.Error())
+		return
+	}
+	resp := apiv1.SLOListResponse{
+		Items: make([]apiv1.SLO, 0, len(items)),
+		Page:  apiv1.Pagination{Page: pg.Page, PageSize: pg.PageSize, Total: pg.Total},
+	}
+	for _, slo := range items {
+		resp.Items = append(resp.Items, sloToAPI(slo))
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) CreateSLO(w http.ResponseWriter, r *http.Request, _ apiv1.CreateSLOParams) {
+	var req apiv1.CreateSLORequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
+		return
+	}
+	slo := store.SLO{
+		ID:             uuid.New(),
+		ServiceID:      uuid.UUID(req.ServiceId),
+		Name:           strings.TrimSpace(req.Name),
+		Description:    strPtr(req.Description),
+		Target:         req.Target,
+		WindowMinutes:  req.WindowMinutes,
+		OpenSLO:        req.Openslo,
+		Canonical:      map[string]any{},
+		DatasourceType: string(req.DatasourceType),
+		DatasourceUID:  req.DatasourceUid,
+	}
+	ctx := context.Background()
+	tx, err := s.store.BeginTx(ctx)
+	if err != nil {
+		writeProblem(w, http.StatusInternalServerError, "tx_begin_failed", err.Error())
+		return
+	}
+	defer tx.Rollback()
+	created, err := s.store.CreateSLO(ctx, tx, slo)
+	if err != nil {
+		writeProblem(w, statusFromError(err), "create_slo_failed", err.Error())
+		return
+	}
+	idk := r.Header.Get("Idempotency-Key")
+	if idk == "" {
+		idk = uuid.NewString()
+	}
+	_ = s.store.EnqueueOutbox(ctx, tx, "slo", created.ID, "slo_created", map[string]any{
+		"serviceId": created.ServiceID.String(),
+		"sloId":     created.ID.String(),
+		"eventType": "burn_started",
+		"value":     0,
+		"threshold": 0,
+		"source":    "control-plane",
+	}, idk)
+	if err := tx.Commit(); err != nil {
+		writeProblem(w, http.StatusInternalServerError, "tx_commit_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, sloToAPI(created))
+}
+
+func (s *Server) GetSLO(w http.ResponseWriter, _ *http.Request, sloId apiv1.SloId) {
+	slo, err := s.store.GetSLO(context.Background(), uuid.UUID(sloId))
+	if err != nil {
+		writeProblem(w, statusFromError(err), "slo_not_found", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sloToAPI(slo))
+}
+
+func (s *Server) UpdateSLO(w http.ResponseWriter, r *http.Request, sloId apiv1.SloId, _ apiv1.UpdateSLOParams) {
+	var req apiv1.UpdateSLORequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
+		return
+	}
+	ctx := context.Background()
+	tx, err := s.store.BeginTx(ctx)
+	if err != nil {
+		writeProblem(w, http.StatusInternalServerError, "tx_begin_failed", err.Error())
+		return
+	}
+	defer tx.Rollback()
+	current, err := s.store.GetSLO(ctx, uuid.UUID(sloId))
+	if err != nil {
+		writeProblem(w, statusFromError(err), "slo_not_found", err.Error())
+		return
+	}
+	current.Name = strings.TrimSpace(req.Name)
+	current.Description = strPtr(req.Description)
+	current.Target = req.Target
+	current.WindowMinutes = req.WindowMinutes
+	current.OpenSLO = req.Openslo
+	current.DatasourceType = string(req.DatasourceType)
+	current.DatasourceUID = req.DatasourceUid
+	updated, err := s.store.UpdateSLO(ctx, tx, current)
+	if err != nil {
+		writeProblem(w, statusFromError(err), "update_slo_failed", err.Error())
+		return
+	}
+	idk := r.Header.Get("Idempotency-Key")
+	if idk == "" {
+		idk = uuid.NewString()
+	}
+	_ = s.store.EnqueueOutbox(ctx, tx, "slo", updated.ID, "slo_updated", map[string]any{
+		"serviceId": updated.ServiceID.String(),
+		"sloId":     updated.ID.String(),
+		"eventType": "burn_continued",
+		"value":     0,
+		"threshold": 0,
+		"source":    "control-plane",
+	}, idk)
+	if err := tx.Commit(); err != nil {
+		writeProblem(w, http.StatusInternalServerError, "tx_commit_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sloToAPI(updated))
+}
+
+func (s *Server) DeleteSLO(w http.ResponseWriter, _ *http.Request, sloId apiv1.SloId) {
+	if err := s.store.DeleteSLO(context.Background(), uuid.UUID(sloId)); err != nil {
+		writeProblem(w, statusFromError(err), "delete_slo_failed", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) ListBurnEvents(w http.ResponseWriter, _ *http.Request, params apiv1.ListBurnEventsParams) {
+	page, size := pagination(params.Page, params.PageSize)
+	var serviceID *uuid.UUID
+	if params.ServiceId != nil {
+		id := uuid.UUID(*params.ServiceId)
+		serviceID = &id
+	}
+	var sloID *uuid.UUID
+	if params.SloId != nil {
+		id := uuid.UUID(*params.SloId)
+		sloID = &id
+	}
+	items, pg, err := s.store.ListBurnEvents(context.Background(), page, size, serviceID, sloID)
+	if err != nil {
+		writeProblem(w, http.StatusInternalServerError, "list_burn_events_failed", err.Error())
+		return
+	}
+	resp := apiv1.BurnEventListResponse{
+		Items: make([]apiv1.BurnEvent, 0, len(items)),
+		Page:  apiv1.Pagination{Page: pg.Page, PageSize: pg.PageSize, Total: pg.Total},
+	}
+	for _, ev := range items {
+		resp.Items = append(resp.Items, apiv1.BurnEvent{
+			Id:             ev.ID,
+			ServiceId:      ev.ServiceID,
+			SloId:          ev.SLOID,
+			EventType:      apiv1.BurnEventEventType(ev.EventType),
+			Value:          ev.Value,
+			Threshold:      ev.Threshold,
+			ObservedAt:     ev.ObservedAt,
+			Source:         ev.Source,
+			IdempotencyKey: ev.IdempotencyKey,
+		})
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func writeProblem(w http.ResponseWriter, status int, code, detail string) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(apiv1.Problem{
+		Type:   "https://heatmap.local/problems/" + code,
+		Title:  http.StatusText(status),
+		Status: status,
+		Code:   code,
+		Detail: detail,
+	})
+}
+
+func pagination(page, pageSize *int) (int, int) {
+	p := 1
+	sz := 50
+	if page != nil && *page > 0 {
+		p = *page
+	}
+	if pageSize != nil && *pageSize > 0 {
+		sz = *pageSize
+	}
+	if sz > 200 {
+		sz = 200
+	}
+	return p, sz
+}
+
+func statusFromError(err error) int {
+	if err == sql.ErrNoRows {
+		return http.StatusNotFound
+	}
+	return http.StatusBadRequest
+}
+
+func serviceToAPI(srv store.Service) apiv1.Service {
+	md := srv.Metadata
+	return apiv1.Service{
+		Id:          srv.ID,
+		Name:        srv.Name,
+		Slug:        srv.Slug,
+		OwnerTeamId: srv.OwnerTeamID,
+		Metadata:    &md,
+		CreatedAt:   srv.CreatedAt,
+		UpdatedAt:   srv.UpdatedAt,
+	}
+}
+
+func sloToAPI(s store.SLO) apiv1.SLO {
+	canonical := s.Canonical
+	var dsType apiv1.SLODatasourceType
+	if s.DatasourceType == "prometheus" {
+		dsType = apiv1.SLODatasourceTypePrometheus
+	} else {
+		dsType = apiv1.SLODatasourceTypeClickhouse
+	}
+	var desc *string
+	if s.Description != "" {
+		desc = &s.Description
+	}
+	return apiv1.SLO{
+		Id:             s.ID,
+		ServiceId:      s.ServiceID,
+		Name:           s.Name,
+		Description:    desc,
+		Target:         s.Target,
+		WindowMinutes:  s.WindowMinutes,
+		Openslo:        s.OpenSLO,
+		Canonical:      &canonical,
+		DatasourceType: dsType,
+		DatasourceUid:  s.DatasourceUID,
+		CreatedAt:      s.CreatedAt,
+		UpdatedAt:      s.UpdatedAt,
+	}
+}
+
+func strPtr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}

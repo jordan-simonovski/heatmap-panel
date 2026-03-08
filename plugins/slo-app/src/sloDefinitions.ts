@@ -13,7 +13,7 @@ export interface SLODefinition {
   windowMinutes: number;
 }
 
-export const SLO_DEFINITIONS: SLODefinition[] = [
+let SLO_DEFINITIONS: SLODefinition[] = [
   {
     id: 'checkout-latency',
     name: 'Checkout Latency',
@@ -69,6 +69,14 @@ export const SLO_DEFINITIONS: SLODefinition[] = [
     windowMinutes: 30,
   },
 ];
+
+export function getSLODefinitions(): SLODefinition[] {
+  return SLO_DEFINITIONS;
+}
+
+export function setSLODefinitions(definitions: SLODefinition[]) {
+  SLO_DEFINITIONS = definitions;
+}
 
 export function getSLOById(id: string): SLODefinition | undefined {
   return SLO_DEFINITIONS.find((s) => s.id === id);

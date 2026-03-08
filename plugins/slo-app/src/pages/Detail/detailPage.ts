@@ -1,14 +1,14 @@
 import { SceneAppPage } from '@grafana/scenes';
 import { detailScene } from './detailScene';
 import { prefixRoute } from '../../utils/utils.routing';
-import { SLO_DEFINITIONS, SLODefinition } from '../../sloDefinitions';
+import { getSLODefinitions, SLODefinition } from '../../sloDefinitions';
 
 /**
  * Generate SceneAppPage sub-pages for each SLO definition.
  * These are registered as drilldown pages under the overview.
  */
 export function sloDetailPages(): SceneAppPage[] {
-  return SLO_DEFINITIONS.map((slo) => sloDetailPage(slo));
+  return getSLODefinitions().map((slo) => sloDetailPage(slo));
 }
 
 export function sloDetailPage(slo: SLODefinition): SceneAppPage {
