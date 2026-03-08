@@ -14,8 +14,7 @@ import {
   VizPanel,
 } from '@grafana/scenes';
 import { locationService } from '@grafana/runtime';
-import { CLICKHOUSE_DS } from '../../constants';
-import { ROUTES } from '../../constants';
+import { CLICKHOUSE_DS, ROUTES } from '../../constants';
 import { prefixRoute } from '../../utils/utils.routing';
 import { SelectionState } from '../../components/Bubbles/SelectionState';
 import { AttributeComparisonPanel } from '../../components/Bubbles/AttributeComparisonPanel';
