@@ -10,6 +10,11 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type APIError struct {
@@ -61,16 +66,16 @@ type AlertRuleData struct {
 }
 
 type ProvisionedAlertRule struct {
-	Uid         string            `json:"uid,omitempty"`
-	Title       string            `json:"title"`
-	Condition   string            `json:"condition,omitempty"`
-	Data        []map[string]any  `json:"data,omitempty"`
-	NoDataState string            `json:"noDataState,omitempty"`
-	ExecErrState string           `json:"execErrState,omitempty"`
-	For         string            `json:"for,omitempty"`
-	Annotations map[string]string `json:"annotations,omitempty"`
-	Labels      map[string]string `json:"labels,omitempty"`
-	IsPaused    bool              `json:"isPaused,omitempty"`
+	Uid          string            `json:"uid,omitempty"`
+	Title        string            `json:"title"`
+	Condition    string            `json:"condition,omitempty"`
+	Data         []map[string]any  `json:"data,omitempty"`
+	NoDataState  string            `json:"noDataState,omitempty"`
+	ExecErrState string            `json:"execErrState,omitempty"`
+	For          string            `json:"for,omitempty"`
+	Annotations  map[string]string `json:"annotations,omitempty"`
+	Labels       map[string]string `json:"labels,omitempty"`
+	IsPaused     bool              `json:"isPaused,omitempty"`
 }
 
 type PutRuleGroupRequest struct {
@@ -128,16 +133,29 @@ func hasLabels(have, want map[string]string) bool {
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path string, reqBody any) ([]byte, error) {
+	tr := otel.Tracer("slo-control-plane/grafana")
+	ctx, span := tr.Start(ctx, "grafana.api_request", trace.WithSpanKind(trace.SpanKindClient))
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("http.method", method),
+		attribute.String("url.path", path),
+	)
+
 	var bodyReader io.Reader
 	if reqBody != nil {
 		raw, err := json.Marshal(reqBody)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			return nil, err
 		}
 		bodyReader = bytes.NewReader(raw)
+		span.SetAttributes(attribute.Int("http.request.body_bytes", len(raw)))
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bodyReader)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -147,11 +165,15 @@ func (c *Client) doJSON(ctx context.Context, method, path string, reqBody any) (
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 	defer resp.Body.Close()
+	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		span.SetStatus(codes.Error, "non-2xx response")
 		return nil, APIError{StatusCode: resp.StatusCode, Body: string(body)}
 	}
 	return body, nil

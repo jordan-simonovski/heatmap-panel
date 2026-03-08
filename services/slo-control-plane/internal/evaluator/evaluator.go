@@ -10,8 +10,12 @@ import (
 
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/store"
+	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/telemetry"
 )
 
 type Config struct {
@@ -71,11 +75,18 @@ func (e *Evaluator) Run(ctx context.Context) {
 }
 
 func (e *Evaluator) EvaluateOnce(ctx context.Context) error {
+	tr := otel.Tracer("slo-control-plane/evaluator")
+	ctx, span := tr.Start(ctx, "evaluator.evaluate_once", trace.WithSpanKind(trace.SpanKindInternal))
+	defer span.End()
+
 	slos, err := e.store.ListAllSLOs(ctx)
 	if err != nil {
+		telemetry.RecordSpanError(span, err)
 		return err
 	}
+	span.SetAttributes(attribute.Int("slo.count", len(slos)))
 	now := time.Now().UTC()
+	evaluated := 0
 	for _, slo := range slos {
 		if slo.DatasourceType != "clickhouse" {
 			continue
@@ -112,7 +123,17 @@ func (e *Evaluator) EvaluateOnce(ctx context.Context) error {
 		if err := e.persistEvaluation(ctx, slo, currentCompliance, severity, currentBurnRate, currentThreshold, currentWindowMin, now); err != nil {
 			continue
 		}
+		span.AddEvent("slo.evaluated", trace.WithAttributes(
+			attribute.String("slo.id", slo.ID.String()),
+			attribute.String("slo.name", slo.Name),
+			attribute.String("slo.datasource_type", slo.DatasourceType),
+			attribute.String("slo.severity", string(severity)),
+			attribute.Float64("slo.compliance", currentCompliance),
+			attribute.Float64("slo.burn_rate", currentBurnRate),
+		))
+		evaluated++
 	}
+	span.SetAttributes(attribute.Int("slo.evaluated_count", evaluated))
 	return nil
 }
 

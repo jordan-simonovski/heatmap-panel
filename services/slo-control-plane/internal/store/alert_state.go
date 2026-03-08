@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const (
@@ -29,12 +30,12 @@ type AlertState struct {
 }
 
 type AlertReconcileAttempt struct {
-	ID         uuid.UUID
-	SLOID      uuid.UUID
-	AlertKind  string
-	Success    bool
-	DurationMs int
-	ErrorText  string
+	ID          uuid.UUID
+	SLOID       uuid.UUID
+	AlertKind   string
+	Success     bool
+	DurationMs  int
+	ErrorText   string
 	AttemptedAt time.Time
 }
 
@@ -45,6 +46,8 @@ type SLOReconcileInput struct {
 }
 
 func (s *Store) UpsertAlertStateTx(ctx context.Context, tx *sql.Tx, st AlertState) (AlertState, error) {
+	ctx, span := s.startSpan(ctx, "store.upsert_alert_state", attribute.String("slo.id", st.SLOID.String()), attribute.String("alert.kind", st.AlertKind))
+	defer span.End()
 	var out AlertState
 	var lastErr sql.NullString
 	err := tx.QueryRowContext(ctx, `
@@ -88,6 +91,8 @@ func (s *Store) GetAlertState(ctx context.Context, sloID uuid.UUID, alertKind st
 }
 
 func (s *Store) ListAlertStatesBySLO(ctx context.Context, sloID uuid.UUID) ([]AlertState, error) {
+	ctx, span := s.startSpan(ctx, "store.list_alert_states_by_slo", attribute.String("slo.id", sloID.String()))
+	defer span.End()
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, slo_id, alert_kind, grafana_rule_uid, grafana_namespace_uid, grafana_rule_group,
 		       last_applied_spec_hash, status, last_error, last_reconciled_at, created_at, updated_at
@@ -131,6 +136,8 @@ func (s *Store) DeleteAlertState(ctx context.Context, sloID uuid.UUID, alertKind
 }
 
 func (s *Store) DeleteAlertStateByRuleUID(ctx context.Context, ruleUID string) error {
+	ctx, span := s.startSpan(ctx, "store.delete_alert_state_by_rule_uid", attribute.String("grafana.rule_uid", ruleUID))
+	defer span.End()
 	res, err := s.db.ExecContext(ctx, `
 		DELETE FROM slo_alert_state
 		WHERE grafana_rule_uid = $1
@@ -174,6 +181,8 @@ func (s *Store) ListOrphanedAlertStates(ctx context.Context) ([]AlertState, erro
 }
 
 func (s *Store) InsertAlertReconcileAttempt(ctx context.Context, a AlertReconcileAttempt) error {
+	ctx, span := s.startSpan(ctx, "store.insert_alert_reconcile_attempt", attribute.String("slo.id", a.SLOID.String()), attribute.String("alert.kind", a.AlertKind))
+	defer span.End()
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO slo_alert_reconcile_attempts (
 			id, slo_id, alert_kind, success, duration_ms, error_text, attempted_at
@@ -183,6 +192,8 @@ func (s *Store) InsertAlertReconcileAttempt(ctx context.Context, a AlertReconcil
 }
 
 func (s *Store) ListSLOReconcileInputs(ctx context.Context) ([]SLOReconcileInput, error) {
+	ctx, span := s.startSpan(ctx, "store.list_slo_reconcile_inputs")
+	defer span.End()
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			s.id, s.service_id, s.name, s.description, s.target, s.window_minutes, s.openslo_yaml,

@@ -21,6 +21,7 @@ import (
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/outbox"
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/reconciler"
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/store"
+	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/telemetry"
 )
 
 func main() {
@@ -28,6 +29,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
+	otelShutdown, err := telemetry.Init(context.Background(), telemetry.Config{
+		ServiceName:  cfg.OTelServiceName,
+		OTLPEndpoint: cfg.OTelExporterOTLPEndpoint,
+		Insecure:     cfg.OTelExporterOTLPInsecure,
+	})
+	if err != nil {
+		log.Fatalf("telemetry init: %v", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = otelShutdown(shutdownCtx)
+	}()
 
 	db, err := sql.Open("pgx", cfg.PostgresDSN)
 	if err != nil {
@@ -74,6 +88,7 @@ func main() {
 	}
 
 	router := chi.NewRouter()
+	router.Use(httpapi.WithTracing)
 	r := httpapi.WithCORS(apiv1.HandlerFromMux(server, router))
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,

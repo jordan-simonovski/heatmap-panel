@@ -6,23 +6,26 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type BurnState struct {
-	SLOID             uuid.UUID
-	IsBurning         bool
-	IsBreached        bool
-	CurrentSeverity   string
-	CurrentCompliance float32
-	CurrentBurnRate   float32
-	ETAExhaustionSec  sql.NullInt32
-	LastTransitionAt  sql.NullTime
+	SLOID              uuid.UUID
+	IsBurning          bool
+	IsBreached         bool
+	CurrentSeverity    string
+	CurrentCompliance  float32
+	CurrentBurnRate    float32
+	ETAExhaustionSec   sql.NullInt32
+	LastTransitionAt   sql.NullTime
 	BreachTransitionAt sql.NullTime
-	LastContinuedAt   sql.NullTime
-	LastEvaluatedAt   time.Time
+	LastContinuedAt    sql.NullTime
+	LastEvaluatedAt    time.Time
 }
 
 func (s *Store) ListAllSLOs(ctx context.Context) ([]SLO, error) {
+	ctx, span := s.startSpan(ctx, "store.list_all_slos")
+	defer span.End()
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, service_id, name, description, target, window_minutes, openslo_yaml, canonical_json,
 		       datasource_type, datasource_uid, created_at, updated_at
@@ -56,6 +59,8 @@ func (s *Store) ListAllSLOs(ctx context.Context) ([]SLO, error) {
 }
 
 func (s *Store) GetBurnStateForUpdate(ctx context.Context, tx *sql.Tx, sloID uuid.UUID) (BurnState, bool, error) {
+	ctx, span := s.startSpan(ctx, "store.get_burn_state_for_update", attribute.String("slo.id", sloID.String()))
+	defer span.End()
 	var st BurnState
 	st.SLOID = sloID
 
@@ -77,6 +82,8 @@ func (s *Store) GetBurnStateForUpdate(ctx context.Context, tx *sql.Tx, sloID uui
 }
 
 func (s *Store) UpsertBurnStateTx(ctx context.Context, tx *sql.Tx, st BurnState) error {
+	ctx, span := s.startSpan(ctx, "store.upsert_burn_state", attribute.String("slo.id", st.SLOID.String()))
+	defer span.End()
 	var lastTransition any
 	if st.LastTransitionAt.Valid {
 		lastTransition = st.LastTransitionAt.Time

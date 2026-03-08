@@ -5,8 +5,13 @@ import (
 	"log"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/burn"
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/store"
+	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/telemetry"
 )
 
 type Worker struct {
@@ -39,11 +44,20 @@ func (w *Worker) Run(ctx context.Context) {
 }
 
 func (w *Worker) flushOnce(ctx context.Context) {
+	tr := otel.Tracer("slo-control-plane/outbox")
+	ctx, span := tr.Start(ctx, "outbox.flush_once", trace.WithSpanKind(trace.SpanKindInternal))
+	defer span.End()
+	span.SetAttributes(attribute.Int("outbox.batch_size", w.batchSize))
+
 	events, err := w.store.ClaimPendingOutbox(ctx, w.batchSize)
 	if err != nil {
+		telemetry.RecordSpanError(span, err)
 		log.Printf("outbox claim failed: %v", err)
 		return
 	}
+	span.SetAttributes(attribute.Int("outbox.claimed_count", len(events)))
+	delivered := 0
+	retried := 0
 	for _, ev := range events {
 		b := burn.Event{
 			ID:             ev.ID,
@@ -81,6 +95,7 @@ func (w *Worker) flushOnce(ctx context.Context) {
 
 		if err := w.sink.InsertEvent(ctx, b); err != nil {
 			_ = w.store.MarkOutboxRetry(ctx, ev.ID, ev.RetryCount+1, err.Error())
+			retried++
 			continue
 		}
 		_ = w.store.InsertBurnEventView(ctx, store.BurnEvent{
@@ -95,5 +110,10 @@ func (w *Worker) flushOnce(ctx context.Context) {
 			IdempotencyKey: b.IdempotencyKey,
 		})
 		_ = w.store.MarkOutboxDelivered(ctx, ev.ID)
+		delivered++
 	}
+	span.SetAttributes(
+		attribute.Int("outbox.delivered_count", delivered),
+		attribute.Int("outbox.retried_count", retried),
+	)
 }

@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Store struct {
@@ -16,6 +19,15 @@ type Store struct {
 
 func New(db *sql.DB) *Store {
 	return &Store{db: db}
+}
+
+func (s *Store) startSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
+	tr := otel.Tracer("slo-control-plane/store")
+	ctx, span := tr.Start(ctx, name, trace.WithSpanKind(trace.SpanKindInternal))
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+	return ctx, span
 }
 
 type Team struct {
@@ -226,6 +238,8 @@ func (s *Store) DeleteService(ctx context.Context, id uuid.UUID) error {
 }
 
 func (s *Store) ListSLOs(ctx context.Context, page, pageSize int, serviceID *uuid.UUID) ([]SLO, Pagination, error) {
+	ctx, span := s.startSpan(ctx, "store.list_slos")
+	defer span.End()
 	where := ""
 	args := []any{}
 	if serviceID != nil {
@@ -274,6 +288,8 @@ func (s *Store) ListSLOs(ctx context.Context, page, pageSize int, serviceID *uui
 }
 
 func (s *Store) CreateSLO(ctx context.Context, tx *sql.Tx, slo SLO) (SLO, error) {
+	ctx, span := s.startSpan(ctx, "store.create_slo", attribute.String("slo.id", slo.ID.String()))
+	defer span.End()
 	blob, _ := json.Marshal(metadataOrEmpty(slo.Canonical))
 	var created SLO
 	var desc sql.NullString
@@ -295,6 +311,8 @@ func (s *Store) CreateSLO(ctx context.Context, tx *sql.Tx, slo SLO) (SLO, error)
 }
 
 func (s *Store) GetSLO(ctx context.Context, id uuid.UUID) (SLO, error) {
+	ctx, span := s.startSpan(ctx, "store.get_slo", attribute.String("slo.id", id.String()))
+	defer span.End()
 	var slo SLO
 	var desc sql.NullString
 	var canonical []byte
@@ -312,6 +330,8 @@ func (s *Store) GetSLO(ctx context.Context, id uuid.UUID) (SLO, error) {
 }
 
 func (s *Store) UpdateSLO(ctx context.Context, tx *sql.Tx, slo SLO) (SLO, error) {
+	ctx, span := s.startSpan(ctx, "store.update_slo", attribute.String("slo.id", slo.ID.String()))
+	defer span.End()
 	blob, _ := json.Marshal(metadataOrEmpty(slo.Canonical))
 	var updated SLO
 	var desc sql.NullString
@@ -333,6 +353,8 @@ func (s *Store) UpdateSLO(ctx context.Context, tx *sql.Tx, slo SLO) (SLO, error)
 }
 
 func (s *Store) DeleteSLO(ctx context.Context, id uuid.UUID) error {
+	ctx, span := s.startSpan(ctx, "store.delete_slo", attribute.String("slo.id", id.String()))
+	defer span.End()
 	res, err := s.db.ExecContext(ctx, `DELETE FROM slos WHERE id = $1`, id)
 	if err != nil {
 		return err
@@ -377,10 +399,20 @@ func (s *Store) ListBurnEvents(ctx context.Context, page, pageSize int, serviceI
 }
 
 func (s *Store) BeginTx(ctx context.Context) (*sql.Tx, error) {
+	ctx, span := s.startSpan(ctx, "store.begin_tx")
+	defer span.End()
 	return s.db.BeginTx(ctx, nil)
 }
 
 func (s *Store) EnqueueOutbox(ctx context.Context, tx *sql.Tx, aggregateType string, aggregateID uuid.UUID, eventType string, payload any, idempotencyKey string) error {
+	ctx, span := s.startSpan(
+		ctx,
+		"store.enqueue_outbox",
+		attribute.String("outbox.aggregate_type", aggregateType),
+		attribute.String("outbox.aggregate_id", aggregateID.String()),
+		attribute.String("outbox.event_type", eventType),
+	)
+	defer span.End()
 	body, _ := json.Marshal(payload)
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO outbox_events (id, aggregate_type, aggregate_id, event_type, payload_json, status, retry_count, next_attempt_at, idempotency_key)

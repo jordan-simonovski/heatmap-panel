@@ -7,10 +7,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/alerts/spec"
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/grafana"
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/store"
+	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/telemetry"
 )
 
 type Config struct {
@@ -58,11 +62,18 @@ func (w *Worker) Run(ctx context.Context) {
 }
 
 func (w *Worker) ReconcileOnce(ctx context.Context) error {
+	tr := otel.Tracer("slo-control-plane/reconciler")
+	ctx, span := tr.Start(ctx, "reconciler.reconcile_once", trace.WithSpanKind(trace.SpanKindInternal))
+	defer span.End()
+
 	inputs, err := w.store.ListSLOReconcileInputs(ctx)
 	if err != nil {
+		telemetry.RecordSpanError(span, err)
 		return err
 	}
+	span.SetAttributes(attribute.Int("slo.count", len(inputs)))
 	desiredRuleUIDs := map[string]struct{}{}
+	reconciled := 0
 	for idx, in := range inputs {
 		if idx >= w.cfg.BatchSize {
 			break
@@ -86,7 +97,14 @@ func (w *Worker) ReconcileOnce(ctx context.Context) error {
 		if err := w.applySLO(ctx, in.ID, desiredSpecs); err != nil {
 			log.Printf("reconcile slo failed slo=%s: %v", in.ID, err)
 		}
+		span.AddEvent("slo.reconciled", trace.WithAttributes(
+			attribute.String("slo.id", in.ID.String()),
+			attribute.String("slo.name", in.Name),
+			attribute.Int("slo.alert_rule_count", len(desiredSpecs)),
+		))
+		reconciled++
 	}
+	span.SetAttributes(attribute.Int("slo.reconciled_count", reconciled))
 	return w.garbageCollect(ctx, desiredRuleUIDs)
 }
 
@@ -102,12 +120,12 @@ func (w *Worker) applySLO(ctx context.Context, sloID uuid.UUID, specs []spec.Des
 	durationMs := int(time.Since(start).Milliseconds())
 	for _, ds := range specs {
 		_ = w.store.InsertAlertReconcileAttempt(ctx, store.AlertReconcileAttempt{
-			ID:         uuid.New(),
-			SLOID:      sloID,
-			AlertKind:  ds.AlertKind,
-			Success:    err == nil,
-			DurationMs: durationMs,
-			ErrorText:  errorText(err),
+			ID:          uuid.New(),
+			SLOID:       sloID,
+			AlertKind:   ds.AlertKind,
+			Success:     err == nil,
+			DurationMs:  durationMs,
+			ErrorText:   errorText(err),
 			AttemptedAt: time.Now().UTC(),
 		})
 		if upsertErr := w.upsertState(ctx, sloID, ds, err); upsertErr != nil {

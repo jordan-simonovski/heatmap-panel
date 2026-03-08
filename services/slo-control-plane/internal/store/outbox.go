@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type OutboxEvent struct {
@@ -20,6 +21,8 @@ type OutboxEvent struct {
 }
 
 func (s *Store) ClaimPendingOutbox(ctx context.Context, batchSize int) ([]OutboxEvent, error) {
+	ctx, span := s.startSpan(ctx, "store.claim_pending_outbox", attribute.Int("outbox.batch_size", batchSize))
+	defer span.End()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -67,6 +70,8 @@ func (s *Store) ClaimPendingOutbox(ctx context.Context, batchSize int) ([]Outbox
 }
 
 func (s *Store) MarkOutboxDelivered(ctx context.Context, id uuid.UUID) error {
+	ctx, span := s.startSpan(ctx, "store.mark_outbox_delivered", attribute.String("outbox.id", id.String()))
+	defer span.End()
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE outbox_events
 		SET status = 'delivered', sent_at = now(), updated_at = now()
@@ -76,6 +81,8 @@ func (s *Store) MarkOutboxDelivered(ctx context.Context, id uuid.UUID) error {
 }
 
 func (s *Store) MarkOutboxRetry(ctx context.Context, id uuid.UUID, retryCount int, errMsg string) error {
+	ctx, span := s.startSpan(ctx, "store.mark_outbox_retry", attribute.String("outbox.id", id.String()), attribute.Int("outbox.retry_count", retryCount))
+	defer span.End()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -102,6 +109,8 @@ func (s *Store) MarkOutboxRetry(ctx context.Context, id uuid.UUID, retryCount in
 }
 
 func (s *Store) InsertBurnEventView(ctx context.Context, ev BurnEvent) error {
+	ctx, span := s.startSpan(ctx, "store.insert_burn_event_view", attribute.String("slo.id", ev.SLOID.String()), attribute.String("event.type", ev.EventType))
+	defer span.End()
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO burn_events_view (
 			id, service_id, slo_id, event_type, value, threshold, observed_at, source, idempotency_key

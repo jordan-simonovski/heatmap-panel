@@ -79,6 +79,49 @@ func TestLoadGrafanaDefaultsAreSafe(t *testing.T) {
 	}
 }
 
+func TestLoadOTelDefaults(t *testing.T) {
+	t.Setenv("SLO_API_POSTGRES_DSN", "postgres://test")
+	t.Setenv("SLO_API_CLICKHOUSE_DSN", "clickhouse://test")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.OTelServiceName != "slo-control-plane" {
+		t.Fatalf("OTelServiceName = %q", cfg.OTelServiceName)
+	}
+	if cfg.OTelExporterOTLPEndpoint != "" {
+		t.Fatalf("OTelExporterOTLPEndpoint = %q", cfg.OTelExporterOTLPEndpoint)
+	}
+	if cfg.OTelExporterOTLPInsecure {
+		t.Fatalf("OTelExporterOTLPInsecure = true")
+	}
+}
+
+func TestLoadOTelCustomValues(t *testing.T) {
+	t.Setenv("SLO_API_POSTGRES_DSN", "postgres://test")
+	t.Setenv("SLO_API_CLICKHOUSE_DSN", "clickhouse://test")
+	t.Setenv("SLO_API_OTEL_SERVICE_NAME", "slo-control-plane-dev")
+	t.Setenv("SLO_API_OTEL_EXPORTER_OTLP_ENDPOINT", "otel-collector:4318")
+	t.Setenv("SLO_API_OTEL_EXPORTER_OTLP_INSECURE", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.OTelServiceName != "slo-control-plane-dev" {
+		t.Fatalf("OTelServiceName = %q", cfg.OTelServiceName)
+	}
+	if cfg.OTelExporterOTLPEndpoint != "otel-collector:4318" {
+		t.Fatalf("OTelExporterOTLPEndpoint = %q", cfg.OTelExporterOTLPEndpoint)
+	}
+	if !cfg.OTelExporterOTLPInsecure {
+		t.Fatalf("OTelExporterOTLPInsecure = false")
+	}
+}
+
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }

@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -9,10 +8,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	apiv1 "github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/api"
 	opensloparser "github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/openslo"
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/store"
+	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/telemetry"
 )
 
 type Server struct {
@@ -35,9 +37,9 @@ func (s *Server) GetReady(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, apiv1.ReadyResponse{Status: apiv1.Ready})
 }
 
-func (s *Server) ListTeams(w http.ResponseWriter, _ *http.Request, params apiv1.ListTeamsParams) {
+func (s *Server) ListTeams(w http.ResponseWriter, r *http.Request, params apiv1.ListTeamsParams) {
 	page, size := pagination(params.Page, params.PageSize)
-	items, pg, err := s.store.ListTeams(context.Background(), page, size)
+	items, pg, err := s.store.ListTeams(r.Context(), page, size)
 	if err != nil {
 		writeProblem(w, http.StatusInternalServerError, "list_teams_failed", err.Error())
 		return
@@ -64,7 +66,7 @@ func (s *Server) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
 		return
 	}
-	team, err := s.store.CreateTeam(context.Background(), uuid.New(), strings.TrimSpace(req.Name), strings.TrimSpace(req.Slug))
+	team, err := s.store.CreateTeam(r.Context(), uuid.New(), strings.TrimSpace(req.Name), strings.TrimSpace(req.Slug))
 	if err != nil {
 		writeProblem(w, statusFromError(err), "create_team_failed", err.Error())
 		return
@@ -78,8 +80,8 @@ func (s *Server) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) GetTeam(w http.ResponseWriter, _ *http.Request, teamId apiv1.TeamId) {
-	team, err := s.store.GetTeam(context.Background(), uuid.UUID(teamId))
+func (s *Server) GetTeam(w http.ResponseWriter, r *http.Request, teamId apiv1.TeamId) {
+	team, err := s.store.GetTeam(r.Context(), uuid.UUID(teamId))
 	if err != nil {
 		writeProblem(w, statusFromError(err), "team_not_found", err.Error())
 		return
@@ -99,7 +101,7 @@ func (s *Server) UpdateTeam(w http.ResponseWriter, r *http.Request, teamId apiv1
 		writeProblem(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
 		return
 	}
-	team, err := s.store.UpdateTeam(context.Background(), uuid.UUID(teamId), strings.TrimSpace(req.Name), strings.TrimSpace(req.Slug))
+	team, err := s.store.UpdateTeam(r.Context(), uuid.UUID(teamId), strings.TrimSpace(req.Name), strings.TrimSpace(req.Slug))
 	if err != nil {
 		writeProblem(w, statusFromError(err), "update_team_failed", err.Error())
 		return
@@ -113,22 +115,22 @@ func (s *Server) UpdateTeam(w http.ResponseWriter, r *http.Request, teamId apiv1
 	})
 }
 
-func (s *Server) DeleteTeam(w http.ResponseWriter, _ *http.Request, teamId apiv1.TeamId) {
-	if err := s.store.DeleteTeam(context.Background(), uuid.UUID(teamId)); err != nil {
+func (s *Server) DeleteTeam(w http.ResponseWriter, r *http.Request, teamId apiv1.TeamId) {
+	if err := s.store.DeleteTeam(r.Context(), uuid.UUID(teamId)); err != nil {
 		writeProblem(w, statusFromError(err), "delete_team_failed", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) ListServices(w http.ResponseWriter, _ *http.Request, params apiv1.ListServicesParams) {
+func (s *Server) ListServices(w http.ResponseWriter, r *http.Request, params apiv1.ListServicesParams) {
 	page, size := pagination(params.Page, params.PageSize)
 	var owner *uuid.UUID
 	if params.OwnerTeamId != nil {
 		id := uuid.UUID(*params.OwnerTeamId)
 		owner = &id
 	}
-	items, pg, err := s.store.ListServices(context.Background(), page, size, owner)
+	items, pg, err := s.store.ListServices(r.Context(), page, size, owner)
 	if err != nil {
 		writeProblem(w, http.StatusInternalServerError, "list_services_failed", err.Error())
 		return
@@ -162,7 +164,7 @@ func (s *Server) CreateService(w http.ResponseWriter, r *http.Request) {
 	if req.Metadata != nil {
 		metadata = *req.Metadata
 	}
-	srv, err := s.store.CreateService(context.Background(), uuid.New(), strings.TrimSpace(req.Name), strings.TrimSpace(req.Slug), uuid.UUID(req.OwnerTeamId), metadata)
+	srv, err := s.store.CreateService(r.Context(), uuid.New(), strings.TrimSpace(req.Name), strings.TrimSpace(req.Slug), uuid.UUID(req.OwnerTeamId), metadata)
 	if err != nil {
 		writeProblem(w, statusFromError(err), "create_service_failed", err.Error())
 		return
@@ -170,8 +172,8 @@ func (s *Server) CreateService(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, serviceToAPI(srv))
 }
 
-func (s *Server) GetService(w http.ResponseWriter, _ *http.Request, serviceId apiv1.ServiceId) {
-	srv, err := s.store.GetService(context.Background(), uuid.UUID(serviceId))
+func (s *Server) GetService(w http.ResponseWriter, r *http.Request, serviceId apiv1.ServiceId) {
+	srv, err := s.store.GetService(r.Context(), uuid.UUID(serviceId))
 	if err != nil {
 		writeProblem(w, statusFromError(err), "service_not_found", err.Error())
 		return
@@ -189,7 +191,7 @@ func (s *Server) UpdateService(w http.ResponseWriter, r *http.Request, serviceId
 	if req.Metadata != nil {
 		metadata = *req.Metadata
 	}
-	srv, err := s.store.UpdateService(context.Background(), uuid.UUID(serviceId), strings.TrimSpace(req.Name), strings.TrimSpace(req.Slug), uuid.UUID(req.OwnerTeamId), metadata)
+	srv, err := s.store.UpdateService(r.Context(), uuid.UUID(serviceId), strings.TrimSpace(req.Name), strings.TrimSpace(req.Slug), uuid.UUID(req.OwnerTeamId), metadata)
 	if err != nil {
 		writeProblem(w, statusFromError(err), "update_service_failed", err.Error())
 		return
@@ -197,22 +199,22 @@ func (s *Server) UpdateService(w http.ResponseWriter, r *http.Request, serviceId
 	writeJSON(w, http.StatusOK, serviceToAPI(srv))
 }
 
-func (s *Server) DeleteService(w http.ResponseWriter, _ *http.Request, serviceId apiv1.ServiceId) {
-	if err := s.store.DeleteService(context.Background(), uuid.UUID(serviceId)); err != nil {
+func (s *Server) DeleteService(w http.ResponseWriter, r *http.Request, serviceId apiv1.ServiceId) {
+	if err := s.store.DeleteService(r.Context(), uuid.UUID(serviceId)); err != nil {
 		writeProblem(w, statusFromError(err), "delete_service_failed", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) ListSLOs(w http.ResponseWriter, _ *http.Request, params apiv1.ListSLOsParams) {
+func (s *Server) ListSLOs(w http.ResponseWriter, r *http.Request, params apiv1.ListSLOsParams) {
 	page, size := pagination(params.Page, params.PageSize)
 	var serviceID *uuid.UUID
 	if params.ServiceId != nil {
 		id := uuid.UUID(*params.ServiceId)
 		serviceID = &id
 	}
-	items, pg, err := s.store.ListSLOs(context.Background(), page, size, serviceID)
+	items, pg, err := s.store.ListSLOs(r.Context(), page, size, serviceID)
 	if err != nil {
 		writeProblem(w, http.StatusInternalServerError, "list_slos_failed", err.Error())
 		return
@@ -251,7 +253,17 @@ func (s *Server) CreateSLO(w http.ResponseWriter, r *http.Request, _ apiv1.Creat
 		DatasourceType: bundle.Runtime.DatasourceType,
 		DatasourceUID:  bundle.Runtime.DatasourceUID,
 	}
-	ctx := context.Background()
+	ctx := r.Context()
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(
+		attribute.String("slo.service_id", req.ServiceId.String()),
+		attribute.String("slo.name", bundle.Runtime.Name),
+		attribute.String("slo.route", bundle.Runtime.Route),
+		attribute.String("slo.type", bundle.Runtime.Type),
+		attribute.Float64("slo.target", float64(bundle.Runtime.Target)),
+		attribute.Int("slo.window_minutes", bundle.Runtime.WindowMinutes),
+	)
+	telemetry.SetPayloadAttributes(span, "slo.openslo", req.Openslo)
 	tx, err := s.store.BeginTx(ctx)
 	if err != nil {
 		writeProblem(w, http.StatusInternalServerError, "tx_begin_failed", err.Error())
@@ -263,6 +275,7 @@ func (s *Server) CreateSLO(w http.ResponseWriter, r *http.Request, _ apiv1.Creat
 		writeProblem(w, statusFromError(err), "create_slo_failed", err.Error())
 		return
 	}
+	span.SetAttributes(attribute.String("slo.id", created.ID.String()))
 	if err := s.store.ReplaceSLOOpenSLOObjectsTx(ctx, tx, created.ID, toStoreObjects(bundle.Objects)); err != nil {
 		writeProblem(w, statusFromError(err), "create_slo_failed", err.Error())
 		return
@@ -274,8 +287,8 @@ func (s *Server) CreateSLO(w http.ResponseWriter, r *http.Request, _ apiv1.Creat
 	writeJSON(w, http.StatusCreated, sloToAPI(created))
 }
 
-func (s *Server) GetSLO(w http.ResponseWriter, _ *http.Request, sloId apiv1.SloId) {
-	slo, err := s.store.GetSLO(context.Background(), uuid.UUID(sloId))
+func (s *Server) GetSLO(w http.ResponseWriter, r *http.Request, sloId apiv1.SloId) {
+	slo, err := s.store.GetSLO(r.Context(), uuid.UUID(sloId))
 	if err != nil {
 		writeProblem(w, statusFromError(err), "slo_not_found", err.Error())
 		return
@@ -294,7 +307,10 @@ func (s *Server) UpdateSLO(w http.ResponseWriter, r *http.Request, sloId apiv1.S
 		writeProblem(w, http.StatusBadRequest, "invalid_openslo", err.Error())
 		return
 	}
-	ctx := context.Background()
+	ctx := r.Context()
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.String("slo.id", uuid.UUID(sloId).String()))
+	telemetry.SetPayloadAttributes(span, "slo.openslo", req.Openslo)
 	tx, err := s.store.BeginTx(ctx)
 	if err != nil {
 		writeProblem(w, http.StatusInternalServerError, "tx_begin_failed", err.Error())
@@ -314,6 +330,13 @@ func (s *Server) UpdateSLO(w http.ResponseWriter, r *http.Request, sloId apiv1.S
 	current.Canonical = opensloparser.RuntimeToMap(bundle.Runtime)
 	current.DatasourceType = bundle.Runtime.DatasourceType
 	current.DatasourceUID = bundle.Runtime.DatasourceUID
+	span.SetAttributes(
+		attribute.String("slo.name", bundle.Runtime.Name),
+		attribute.String("slo.route", bundle.Runtime.Route),
+		attribute.String("slo.type", bundle.Runtime.Type),
+		attribute.Float64("slo.target", float64(bundle.Runtime.Target)),
+		attribute.Int("slo.window_minutes", bundle.Runtime.WindowMinutes),
+	)
 	updated, err := s.store.UpdateSLO(ctx, tx, current)
 	if err != nil {
 		writeProblem(w, statusFromError(err), "update_slo_failed", err.Error())
@@ -330,16 +353,18 @@ func (s *Server) UpdateSLO(w http.ResponseWriter, r *http.Request, sloId apiv1.S
 	writeJSON(w, http.StatusOK, sloToAPI(updated))
 }
 
-func (s *Server) DeleteSLO(w http.ResponseWriter, _ *http.Request, sloId apiv1.SloId) {
-	if err := s.store.DeleteSLO(context.Background(), uuid.UUID(sloId)); err != nil {
+func (s *Server) DeleteSLO(w http.ResponseWriter, r *http.Request, sloId apiv1.SloId) {
+	span := trace.SpanFromContext(r.Context())
+	span.SetAttributes(attribute.String("slo.id", uuid.UUID(sloId).String()))
+	if err := s.store.DeleteSLO(r.Context(), uuid.UUID(sloId)); err != nil {
 		writeProblem(w, statusFromError(err), "delete_slo_failed", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) GetSLOAlertStatus(w http.ResponseWriter, _ *http.Request, sloId apiv1.SloId) {
-	states, err := s.store.ListAlertStatesBySLO(context.Background(), uuid.UUID(sloId))
+func (s *Server) GetSLOAlertStatus(w http.ResponseWriter, r *http.Request, sloId apiv1.SloId) {
+	states, err := s.store.ListAlertStatesBySLO(r.Context(), uuid.UUID(sloId))
 	if err != nil {
 		writeProblem(w, statusFromError(err), "get_slo_alert_status_failed", err.Error())
 		return
@@ -376,7 +401,7 @@ func (s *Server) GetSLOAlertStatus(w http.ResponseWriter, _ *http.Request, sloId
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (s *Server) ListBurnEvents(w http.ResponseWriter, _ *http.Request, params apiv1.ListBurnEventsParams) {
+func (s *Server) ListBurnEvents(w http.ResponseWriter, r *http.Request, params apiv1.ListBurnEventsParams) {
 	page, size := pagination(params.Page, params.PageSize)
 	var serviceID *uuid.UUID
 	if params.ServiceId != nil {
@@ -388,7 +413,7 @@ func (s *Server) ListBurnEvents(w http.ResponseWriter, _ *http.Request, params a
 		id := uuid.UUID(*params.SloId)
 		sloID = &id
 	}
-	items, pg, err := s.store.ListBurnEvents(context.Background(), page, size, serviceID, sloID)
+	items, pg, err := s.store.ListBurnEvents(r.Context(), page, size, serviceID, sloID)
 	if err != nil {
 		writeProblem(w, http.StatusInternalServerError, "list_burn_events_failed", err.Error())
 		return
@@ -483,9 +508,9 @@ func sloToAPI(s store.SLO) apiv1.SLO {
 		ux = &runtime.UserExperience
 	}
 	return apiv1.SLO{
-		Id:             s.ID,
-		ServiceId:      s.ServiceID,
-		Openslo:        s.OpenSLO,
+		Id:        s.ID,
+		ServiceId: s.ServiceID,
+		Openslo:   s.OpenSLO,
 		Runtime: apiv1.SLORuntime{
 			Name:           runtime.Name,
 			Description:    desc,
@@ -498,8 +523,8 @@ func sloToAPI(s store.SLO) apiv1.SLO {
 			DatasourceType: dsType,
 			DatasourceUid:  runtime.DatasourceUID,
 		},
-		CreatedAt:      s.CreatedAt,
-		UpdatedAt:      s.UpdatedAt,
+		CreatedAt: s.CreatedAt,
+		UpdatedAt: s.UpdatedAt,
 	}
 }
 
