@@ -1,6 +1,11 @@
 export interface SLODefinition {
   id: string;
   name: string;
+  description?: string;
+  userExperience?: string;
+  openslo?: string;
+  datasourceType?: string;
+  datasourceUid?: string;
   route: string;
   type: 'latency' | 'error_rate';
   /** For latency SLOs: p99 must be below this threshold (ms) */
@@ -30,6 +35,15 @@ let SLO_DEFINITIONS: SLODefinition[] = [
     type: 'error_rate',
     thresholdRate: 0.01,
     target: 0.99,
+    windowMinutes: 30,
+  },
+  {
+    id: 'orders-error-rate-90',
+    name: 'Orders Error Rate (90%)',
+    route: '/api/orders',
+    type: 'error_rate',
+    thresholdRate: 0.01,
+    target: 0.9,
     windowMinutes: 30,
   },
   {

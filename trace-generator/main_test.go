@@ -1,6 +1,8 @@
 package main
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestDeterministicBurnDecisionSteepRoute(t *testing.T) {
 	cfg := burnProfileConfig{
@@ -19,6 +21,32 @@ func TestDeterministicBurnDecisionSteepRoute(t *testing.T) {
 	}
 	if status != 504 {
 		t.Fatalf("expected 504 for steep burn, got %d", status)
+	}
+}
+
+func TestLoadBurnProfileConfigFromEnvUsesGradualDefaults(t *testing.T) {
+	t.Setenv("BURN_PROFILE", "deterministic")
+	t.Setenv("BURN_STEEP_ROUTE", "")
+	t.Setenv("BURN_STEEP_ERROR_RATE", "")
+	t.Setenv("BURN_SLOW_ROUTE", "")
+	t.Setenv("BURN_SLOW_ERROR_RATE", "")
+
+	cfg := loadBurnProfileConfigFromEnv()
+
+	if cfg.SteepErrorRate > 0.005 {
+		t.Fatalf("steep default too high for gradual burn: %f", cfg.SteepErrorRate)
+	}
+	if cfg.SlowErrorRate > 0.002 {
+		t.Fatalf("slow default too high for gradual burn: %f", cfg.SlowErrorRate)
+	}
+}
+
+func TestScenarioErrorRatesAreConservativeForLocalSLOTesting(t *testing.T) {
+	if scenarioPaymentTimeoutRate > 0.10 {
+		t.Fatalf("payment timeout rate too high: %f", scenarioPaymentTimeoutRate)
+	}
+	if scenarioAuthMemoryLeakErrorRate > 0.15 {
+		t.Fatalf("auth memory leak error rate too high: %f", scenarioAuthMemoryLeakErrorRate)
 	}
 }
 

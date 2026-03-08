@@ -45,7 +45,7 @@ function buildTraceWaterfallSql(traceId: string): string {
     "StatusMessage" as statusMessage,
     "TraceState" as traceState
   FROM "default"."otel_traces"
-  WHERE "TraceId" = '${escapedTraceId}'
+  WHERE traceID = '${escapedTraceId}'
   LIMIT 1000`;
 }
 
@@ -81,6 +81,7 @@ export function traceScene(traceId: string) {
         datasource: CLICKHOUSE_DS,
         queryType: 'sql',
         rawSql: buildTraceWaterfallSql(traceId),
+        format: 1,
       } as any,
     ],
   });

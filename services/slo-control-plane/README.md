@@ -63,6 +63,72 @@ You can also run resource-level commands:
 ./scripts/crud-demo.sh burn list
 ```
 
+## OpenSLO schema for `createSLO`
+
+`POST /v1/slos` is OpenSLO-only. The request accepts `serviceId` and `openslo`; all runtime fields are derived from the OpenSLO document.
+
+### Minimal API payload
+
+```json
+{
+  "serviceId": "7f4f8f4c-0cb5-4ad6-9f91-5b6f8d3f2a11",
+  "openslo": "apiVersion: openslo/v1\nkind: SLO\nmetadata:\n  name: checkout-p99-latency\n  displayName: Checkout P99 Latency\n  annotations:\n    heatmap.local/userExperience: Checkout stays responsive from cart to confirmation.\nspec:\n  description: Users can complete checkout quickly without waiting.\n  service: api-gateway\n  budgetingMethod: Occurrences\n  objectives:\n    - target: 0.99\n  timeWindow:\n    - duration: 30m\n      isRolling: true\n  indicator:\n    metadata:\n      name: checkout-p99-indicator\n    spec:\n      thresholdMetric:\n        metricSource:\n          type: clickhouse\n          spec:\n            route: /cart/checkout\n            type: latency\n            threshold: 500\n            datasourceUid: clickhouse\n            datasourceType: clickhouse"
+}
+```
+
+### Expected OpenSLO YAML shape
+
+```yaml
+apiVersion: openslo/v1
+kind: SLO
+metadata:
+  name: checkout-p99-latency
+  displayName: Checkout P99 Latency
+  annotations:
+    heatmap.local/userExperience: Checkout stays responsive from cart to confirmation.
+spec:
+  description: Users can complete checkout quickly without waiting.
+  service: api-gateway
+  budgetingMethod: Occurrences
+  objectives:
+    - target: 0.99
+  timeWindow:
+    - duration: 30m
+      isRolling: true
+  indicator:
+    metadata:
+      name: checkout-p99-indicator
+    spec:
+      thresholdMetric:
+        metricSource:
+          type: clickhouse
+          spec:
+            route: /cart/checkout
+            type: latency # or error_rate
+            threshold: 500 # ms for latency, fraction for error_rate (for example 0.01)
+            datasourceUid: clickhouse
+            datasourceType: clickhouse
+```
+
+### Parsed fields (OpenSLO -> runtime projection)
+
+- `metadata.displayName` (fallback `metadata.name`) -> runtime `name`
+- `spec.description` -> runtime `description`
+- `metadata.annotations["heatmap.local/userExperience"]` -> runtime `userExperience`
+- `spec.objectives[0].target` -> runtime `target`
+- `spec.timeWindow[0].duration` -> runtime `windowMinutes`
+- `spec.indicator.spec.thresholdMetric.metricSource.spec.route` -> runtime `route`
+- `spec.indicator.spec.thresholdMetric.metricSource.spec.type` -> runtime `type`
+- `spec.indicator.spec.thresholdMetric.metricSource.spec.threshold` -> runtime `threshold`
+- `spec.indicator.spec.thresholdMetric.metricSource.spec.datasourceUid` -> runtime `datasourceUid`
+- `spec.indicator.spec.thresholdMetric.metricSource.spec.datasourceType` -> runtime `datasourceType`
+
+### Alert generation behavior
+
+- SLO objects alone do not create Grafana alerts.
+- The reconciler only creates alerts from OpenSLO `AlertCondition` objects in the same submitted OpenSLO bundle.
+- If no `AlertCondition` objects are present, no managed Grafana alerts are created for that SLO.
+
 ## API contract
 
 Source of truth:

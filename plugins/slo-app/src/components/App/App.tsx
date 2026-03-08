@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { SceneApp } from '@grafana/scenes';
 import { AppRootProps } from '@grafana/data';
 import { PluginPropsContext } from '../../utils/utils.plugin';
-import { createOverviewPage } from '../../pages/Overview/overviewPage';
 import { sloDetailPages } from '../../pages/Detail/detailPage';
 import { components } from '../../api/generated/types';
 import { mapSLOToDefinition, SLOControlPlaneClient } from '../../api/sloControlPlane';
@@ -10,6 +9,9 @@ import { setSLODefinitions } from '../../sloDefinitions';
 import { createControlPlanePage } from '../../pages/ControlPlane/controlPlanePage';
 import { createTeamPages } from '../../pages/Team/teamPage';
 import { createServicePages } from '../../pages/Service/servicePage';
+import { createInvestigationsPage } from '../../pages/Investigations/investigationsPage';
+import { createCatalogPage } from '../../pages/Catalog/catalogPage';
+import { createOwnershipPage } from '../../pages/Ownership/ownershipPage';
 
 function getSceneApp(args: {
   apiUrl: string;
@@ -19,36 +21,54 @@ function getSceneApp(args: {
   burnEvents: components['schemas']['BurnEvent'][];
   onRefresh: () => Promise<void>;
 }) {
-  const overviewPage = createOverviewPage({
-    apiUrl: args.apiUrl,
+  const investigationsPage = createInvestigationsPage({
     teams: args.teams,
     services: args.services,
     slos: args.slos,
     burnEvents: args.burnEvents,
-    onRefresh: args.onRefresh,
   });
 
   return new SceneApp({
     pages: [
-      overviewPage,
+      investigationsPage,
+      createCatalogPage(
+        {
+          teams: args.teams,
+          services: args.services,
+          slos: args.slos,
+        },
+        investigationsPage
+      ),
+      createOwnershipPage(
+        {
+          teams: args.teams,
+          services: args.services,
+          slos: args.slos,
+          burnEvents: args.burnEvents,
+        },
+        investigationsPage
+      ),
       createControlPlanePage({
         apiUrl: args.apiUrl,
         teams: args.teams,
         services: args.services,
+        slos: args.slos,
         burnEvents: args.burnEvents,
         onRefresh: args.onRefresh,
-      }, overviewPage),
+      }, investigationsPage),
       ...createTeamPages({
         teams: args.teams,
         services: args.services,
         slos: args.slos,
-      }, overviewPage),
+        burnEvents: args.burnEvents,
+      }, investigationsPage),
       ...createServicePages({
         teams: args.teams,
         services: args.services,
         slos: args.slos,
-      }, overviewPage),
-      ...sloDetailPages(overviewPage),
+        burnEvents: args.burnEvents,
+      }, investigationsPage),
+      ...sloDetailPages(investigationsPage),
     ],
     urlSyncOptions: {
       updateUrlOnInit: true,

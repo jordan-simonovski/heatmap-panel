@@ -13,6 +13,7 @@ import { getBackendSrv } from '@grafana/runtime';
 import { lastValueFrom } from 'rxjs';
 import { HeatmapSelection } from './types';
 import { rankRepresentativeTraces, RepresentativeTraceRow } from './representativeTraceRanking';
+import { buildFilterClause } from './sqlFilters';
 
 interface RepresentativeTracesState extends SceneObjectState {
   selection: HeatmapSelection | null;
@@ -79,10 +80,9 @@ export class RepresentativeTracesPanel extends SceneObjectBase<RepresentativeTra
 
     if (this.adHocVar) {
       for (const f of this.adHocVar.state.filters) {
-        if (f.operator === '=') {
-          parts.push(`SpanAttributes['${f.key}'] = '${f.value}'`);
-        } else if (f.operator === '!=') {
-          parts.push(`SpanAttributes['${f.key}'] != '${f.value}'`);
+        const clause = buildFilterClause(f.key, f.value, f.operator);
+        if (clause) {
+          parts.push(clause);
         }
       }
     }
@@ -182,7 +182,7 @@ export class RepresentativeTracesPanel extends SceneObjectBase<RepresentativeTra
     const styles = useStyles2(getStyles);
 
     if (!selection) {
-      return <div className={styles.placeholder}>Select outliers to see representative traces</div>;
+      return <div className={styles.placeholder}>Select outliers, then open representative traces to validate root cause.</div>;
     }
 
     if (loading) {
@@ -190,7 +190,7 @@ export class RepresentativeTracesPanel extends SceneObjectBase<RepresentativeTra
     }
 
     if (traces.length === 0) {
-      return <div className={styles.placeholder}>No representative traces found for this selection</div>;
+      return <div className={styles.placeholder}>No representative traces found. Expand your selection or remove narrow filters.</div>;
     }
 
     return (

@@ -5,6 +5,7 @@ type Team = components['schemas']['Team'];
 type Service = components['schemas']['Service'];
 type SLO = components['schemas']['SLO'];
 type BurnEvent = components['schemas']['BurnEvent'];
+type AlertState = components['schemas']['AlertState'];
 
 export class SLOControlPlaneClient {
   constructor(private readonly baseUrl: string) {}
@@ -66,6 +67,11 @@ export class SLOControlPlaneClient {
     return this.unwrapList<BurnEvent>(res);
   }
 
+  async getSLOAlertStatus(sloId: string): Promise<AlertState[]> {
+    const res = await fetch(`${this.baseUrl}/v1/slos/${encodeURIComponent(sloId)}/alert-status`);
+    return this.unwrapList<AlertState>(res);
+  }
+
   private async unwrapList<T>(res: Response): Promise<T[]> {
     if (!res.ok) {
       throw new Error(await res.text());
@@ -83,57 +89,25 @@ export class SLOControlPlaneClient {
 }
 
 export function mapSLOToDefinition(slo: SLO): SLODefinition {
-  const canonical = slo.canonical ?? {};
-  const parsed = parseOpenSLOIndicator(slo.openslo);
-
-  const type = canonical['type'] === 'error_rate'
-    ? 'error_rate'
-    : canonical['type'] === 'latency'
-      ? 'latency'
-      : parsed.type ?? 'latency';
-  const route = typeof canonical['route'] === 'string'
-    ? canonical['route']
-    : parsed.route ?? '/unknown';
-
-  const thresholdMs = numberOr(canonical['thresholdMs'], parsed.threshold ?? 500);
-  const thresholdRate = numberOr(canonical['thresholdRate'], parsed.threshold ?? 0.01);
+  const runtime = slo.runtime;
+  const type = runtime.type === 'error_rate' ? 'error_rate' : 'latency';
+  const route = runtime.route;
+  const thresholdMs = type === 'latency' ? runtime.threshold : 500;
+  const thresholdRate = type === 'error_rate' ? runtime.threshold : 0.01;
 
   return {
     id: slo.id,
-    name: slo.name,
+    name: runtime.name,
+    description: runtime.description ?? undefined,
+    userExperience: runtime.userExperience ?? undefined,
     route,
     type,
     thresholdMs: type === 'latency' ? thresholdMs : undefined,
     thresholdRate: type === 'error_rate' ? thresholdRate : undefined,
-    target: slo.target,
-    windowMinutes: slo.windowMinutes,
-  };
-}
-
-function numberOr(value: unknown, fallback: number): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  return fallback;
-}
-
-function parseOpenSLOIndicator(openslo: string): {
-  route?: string;
-  type?: 'latency' | 'error_rate';
-  threshold?: number;
-} {
-  const routeMatch = openslo.match(/^\s*route:\s*(.+)\s*$/m);
-  const typeMatch = openslo.match(/^\s*type:\s*(.+)\s*$/m);
-  const thresholdMatch = openslo.match(/^\s*threshold:\s*([0-9.]+)\s*$/m);
-
-  const route = routeMatch?.[1]?.trim();
-  const rawType = typeMatch?.[1]?.trim();
-  const type = rawType === 'error_rate' ? 'error_rate' : rawType === 'latency' ? 'latency' : undefined;
-  const threshold = thresholdMatch?.[1] ? Number(thresholdMatch[1]) : undefined;
-
-  return {
-    route: route || undefined,
-    type,
-    threshold: Number.isFinite(threshold ?? NaN) ? threshold : undefined,
+    target: runtime.target,
+    windowMinutes: runtime.windowMinutes,
+    openslo: slo.openslo,
+    datasourceUid: runtime.datasourceUid,
+    datasourceType: runtime.datasourceType,
   };
 }

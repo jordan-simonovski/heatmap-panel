@@ -2,12 +2,12 @@ import React from 'react';
 import { SceneApp, useSceneApp } from '@grafana/scenes';
 import { AppRootProps } from '@grafana/data';
 import { PluginPropsContext } from '../../utils/utils.plugin';
-import { bubblesPage } from '../../pages/Bubbles/bubblesPage';
+import { explorerPage } from '../../pages/Bubbles/bubblesPage';
 import { tracePage } from '../../pages/Trace/tracePage';
 
 function getSceneApp() {
   return new SceneApp({
-    pages: [bubblesPage, tracePage],
+    pages: [explorerPage, tracePage],
     urlSyncOptions: {
       updateUrlOnInit: true,
       createBrowserHistorySteps: true,

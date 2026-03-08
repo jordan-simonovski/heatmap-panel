@@ -25,7 +25,10 @@ import {
   SelectionState,
   AttributeComparisonPanel,
   RepresentativeTracesPanel,
+  InvestigationGuidancePanel,
+  buildFilterClause,
 } from '@heatmap/shared-comparison';
+import { heatmapExplorerRoute, heatmapTraceRoute } from '../../utils/crossAppRoutes';
 
 function buildAdHocWhere(slo: SLODefinition, adHocFilters: AdHocFiltersVariable): string {
   const parts: string[] = [
@@ -34,10 +37,9 @@ function buildAdHocWhere(slo: SLODefinition, adHocFilters: AdHocFiltersVariable)
   ];
 
   for (const f of adHocFilters.state.filters) {
-    if (f.operator === '=') {
-      parts.push(`SpanAttributes['${f.key}'] = '${f.value}'`);
-    } else if (f.operator === '!=') {
-      parts.push(`SpanAttributes['${f.key}'] != '${f.value}'`);
+    const clause = buildFilterClause(f.key, f.value, f.operator);
+    if (clause) {
+      parts.push(clause);
     }
   }
 
@@ -115,7 +117,7 @@ export function detailScene(slo: SLODefinition) {
     }],
   });
 
-  // --- Middle row: timeseries ---
+  // --- Middle row: latency-only timeseries ---
   const tsQuery = new SceneQueryRunner({
     datasource: CLICKHOUSE_DS,
     queries: [{
@@ -129,9 +131,7 @@ export function detailScene(slo: SLODefinition) {
     }],
   });
 
-  const tsTitle = slo.type === 'latency'
-    ? `p99 Latency (threshold: ${slo.thresholdMs}ms)`
-    : `Error Rate (threshold: ${((slo.thresholdRate ?? 0) * 100).toFixed(1)}%)`;
+  const tsTitle = `p99 Latency (threshold: ${slo.thresholdMs}ms)`;
 
   // --- Bottom row: drilldown viz + comparison ---
   const drilldownQuery = new SceneQueryRunner({
@@ -166,8 +166,7 @@ export function detailScene(slo: SLODefinition) {
     datasource: CLICKHOUSE_DS,
     maxTraces: 12,
     onTraceSelect: (traceId) => {
-      // Reuse the heatmap app trace details route for now.
-      locationService.push(`/a/heatmap-bubbles-app/trace/${encodeURIComponent(traceId)}`);
+      locationService.push(heatmapTraceRoute(traceId));
     },
   });
 
@@ -209,6 +208,24 @@ export function detailScene(slo: SLODefinition) {
     body: new SceneFlexLayout({
       direction: 'column',
       children: [
+        new SceneFlexItem({
+          minHeight: 110,
+          body: new InvestigationGuidancePanel({
+            title: 'Continue investigation',
+            summary:
+              slo.description ??
+              slo.userExperience ??
+              'Use SLO context here, then pivot to heatmap explorer for trace-level evidence.',
+            kpis: [
+              { label: 'SLO', value: slo.name, color: 'blue' },
+              { label: 'Type', value: slo.type, color: 'purple' },
+              { label: 'Target', value: `${(slo.target * 100).toFixed(1)}%`, color: 'green' },
+            ],
+            actions: [
+              { label: 'Heatmap Explorer', onClick: () => locationService.push(heatmapExplorerRoute()) },
+            ],
+          }),
+        }),
         // Top row: compliance + budget
         new SceneFlexItem({
           height: 100,
@@ -273,45 +290,44 @@ export function detailScene(slo: SLODefinition) {
             ],
           }),
         }),
-        // Middle row: timeseries
-        new SceneFlexItem({
-          height: 250,
-          body: new VizPanel({
-            title: tsTitle,
-            pluginId: 'timeseries',
-            $data: tsQuery,
-            fieldConfig: {
-              defaults: {
-                custom: {
-                  lineWidth: 2,
-                  fillOpacity: 10,
-                  pointSize: 4,
-                  showPoints: 'never' as any,
-                  thresholdsStyle: {
-                    mode: 'line' as any,
+        ...(slo.type === 'latency'
+          ? [
+              // Middle row: latency timeseries
+              new SceneFlexItem({
+                height: 250,
+                body: new VizPanel({
+                  title: tsTitle,
+                  pluginId: 'timeseries',
+                  $data: tsQuery,
+                  fieldConfig: {
+                    defaults: {
+                      custom: {
+                        lineWidth: 2,
+                        fillOpacity: 10,
+                        pointSize: 4,
+                        showPoints: 'never' as any,
+                        thresholdsStyle: {
+                          mode: 'line' as any,
+                        },
+                      },
+                      thresholds: {
+                        mode: 'absolute' as any,
+                        steps: [
+                          { value: -Infinity, color: 'green' },
+                          { value: slo.thresholdMs ?? 500, color: 'red' },
+                        ],
+                      },
+                    },
+                    overrides: [],
                   },
-                },
-                thresholds: {
-                  mode: 'absolute' as any,
-                  steps: slo.type === 'latency'
-                    ? [
-                        { value: -Infinity, color: 'green' },
-                        { value: slo.thresholdMs ?? 500, color: 'red' },
-                      ]
-                    : [
-                        { value: -Infinity, color: 'green' },
-                        { value: slo.thresholdRate ?? 0.01, color: 'red' },
-                      ],
-                },
-              },
-              overrides: [],
-            },
-            options: {
-              legend: { showLegend: true },
-              tooltip: { mode: 'single' },
-            },
-          }),
-        }),
+                  options: {
+                    legend: { showLegend: true },
+                    tooltip: { mode: 'single' },
+                  },
+                }),
+              }),
+            ]
+          : []),
         // Bottom: drilldown viz (heatmap for latency, timeseries for error_rate)
         new SceneFlexItem({
           height: 350,

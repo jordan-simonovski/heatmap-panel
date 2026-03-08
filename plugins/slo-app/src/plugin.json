@@ -20,16 +20,28 @@
   "includes": [
     {
       "type": "page",
-      "name": "SLO Overview",
-      "path": "/a/%PLUGIN_ID%/overview",
+      "name": "Investigations",
+      "path": "/a/%PLUGIN_ID%/investigations",
       "addToNav": true,
       "defaultNav": true
     },
     {
       "type": "page",
-      "name": "SLO Detail",
-      "path": "/a/%PLUGIN_ID%/slo/:id",
-      "addToNav": false
+      "name": "SLO Catalog",
+      "path": "/a/%PLUGIN_ID%/catalog",
+      "addToNav": true
+    },
+    {
+      "type": "page",
+      "name": "Ownership",
+      "path": "/a/%PLUGIN_ID%/ownership",
+      "addToNav": true
+    },
+    {
+      "type": "page",
+      "name": "Operations",
+      "path": "/a/%PLUGIN_ID%/operations",
+      "addToNav": true
     }
   ],
   "dependencies": {

@@ -15,6 +15,7 @@ interface ControlPlaneSceneState extends SceneObjectState {
   apiUrl: string;
   teams: components['schemas']['Team'][];
   services: components['schemas']['Service'][];
+  slos: components['schemas']['SLO'][];
   burnEvents: components['schemas']['BurnEvent'][];
   onRefresh: () => Promise<void>;
 }
@@ -27,6 +28,7 @@ class ControlPlaneScene extends SceneObjectBase<ControlPlaneSceneState> {
         apiUrl={state.apiUrl}
         teams={state.teams}
         services={state.services}
+        slos={state.slos}
         burnEvents={state.burnEvents}
         onRefresh={state.onRefresh}
       />
@@ -36,10 +38,10 @@ class ControlPlaneScene extends SceneObjectBase<ControlPlaneSceneState> {
 
 export function createControlPlanePage(args: Omit<ControlPlaneSceneState, 'key'>, parentPage?: SceneAppPage) {
   return new SceneAppPage({
-    title: 'Control Plane',
-    url: prefixRoute(ROUTES.ControlPlane),
-    routePath: ROUTES.ControlPlane,
-    subTitle: 'Manage teams, services, and OpenSLO definitions.',
+    title: 'Operations',
+    url: prefixRoute(ROUTES.Operations),
+    routePath: ROUTES.Operations,
+    subTitle: 'Manage entities while investigations stay in dedicated RCA flows.',
     getParentPage: parentPage ? () => parentPage : undefined,
     getScene: () =>
       new EmbeddedScene({
@@ -47,6 +49,7 @@ export function createControlPlanePage(args: Omit<ControlPlaneSceneState, 'key'>
           apiUrl: args.apiUrl,
           teams: args.teams,
           services: args.services,
+          slos: args.slos,
           burnEvents: args.burnEvents,
           onRefresh: args.onRefresh,
         }),

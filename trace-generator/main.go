@@ -249,6 +249,13 @@ type traceAttrs struct {
 	route, method, region, buildID, platform, featureFlag, tenant, uid, pod string
 }
 
+const (
+	// Keep local dev data mostly healthy so alert calibration can be validated.
+	// High values here quickly force sustained breach conditions for 99% SLOs.
+	scenarioPaymentTimeoutRate      = 0.05
+	scenarioAuthMemoryLeakErrorRate = 0.10
+)
+
 type burnProfileMode string
 
 const (
@@ -279,9 +286,9 @@ func loadBurnProfileConfigFromEnv() burnProfileConfig {
 	return burnProfileConfig{
 		Mode:           mode,
 		SteepRoute:     stringEnv("BURN_STEEP_ROUTE", "/cart/checkout"),
-		SteepErrorRate: boundedFloatEnv("BURN_STEEP_ERROR_RATE", 0.08),
+		SteepErrorRate: boundedFloatEnv("BURN_STEEP_ERROR_RATE", 0.003),
 		SlowRoute:      stringEnv("BURN_SLOW_ROUTE", "/api/auth"),
-		SlowErrorRate:  boundedFloatEnv("BURN_SLOW_ERROR_RATE", 0.003),
+		SlowErrorRate:  boundedFloatEnv("BURN_SLOW_ERROR_RATE", 0.001),
 	}
 }
 
@@ -327,8 +334,8 @@ func deterministicBurnDecision(route string, cfg burnProfileConfig, sample float
 func detectScenario(a traceAttrs) scenario {
 	svc := routeToService(a.route)
 
-	// S6: Payment timeout — checkout + us-west-2, 30% probability gate
-	if a.route == "/cart/checkout" && a.region == "us-west-2" && rand.Float64() < 0.30 {
+	// S6: Payment timeout — checkout + us-west-2, limited probability gate
+	if a.route == "/cart/checkout" && a.region == "us-west-2" && rand.Float64() < scenarioPaymentTimeoutRate {
 		return scenarioPaymentTimeout
 	}
 	// S1: Slow checkout — feature flag + EU
@@ -681,10 +688,10 @@ func emitAuthMemoryLeak(ctx context.Context, st *serviceTracers, ts time.Time, a
 	rootDur := gaussianDuration(800, 200)
 	svcDur := gaussianDuration(700, 180)
 
-	// Intermittent 503 (30% of the time)
+	// Intermittent 503 with conservative default for local dev calibration.
 	statusCode := 200
 	var errMsg string
-	if rand.Float64() < 0.30 {
+	if rand.Float64() < scenarioAuthMemoryLeakErrorRate {
 		statusCode = 503
 		errMsg = "service unavailable: GC overhead"
 	}

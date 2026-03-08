@@ -21,6 +21,9 @@ import { SelectionState } from '../../components/Bubbles/SelectionState';
 import { AttributeComparisonPanel } from '../../components/Bubbles/AttributeComparisonPanel';
 import { RepresentativeTracesPanel } from '../../components/Bubbles/RepresentativeTracesPanel';
 import { ViewModeControl } from '../../components/Bubbles/ViewModeControl';
+import { InvestigationGuidancePanel, buildFilterClause } from '@heatmap/shared-comparison';
+
+export type WorkbenchView = 'explorer' | 'comparisons' | 'evidence';
 
 /**
  * Build the heatmap SQL with the current service + ad-hoc filter state baked in.
@@ -40,10 +43,9 @@ function buildHeatmapSql(
   }
 
   for (const f of adHocFilters.state.filters) {
-    if (f.operator === '=') {
-      parts.push(`SpanAttributes['${f.key}'] = '${f.value}'`);
-    } else if (f.operator === '!=') {
-      parts.push(`SpanAttributes['${f.key}'] != '${f.value}'`);
+    const clause = buildFilterClause(f.key, f.value, f.operator);
+    if (clause) {
+      parts.push(clause);
     }
   }
 
@@ -60,7 +62,7 @@ function buildHeatmapSql(
         LIMIT 10000`;
 }
 
-export function bubblesScene() {
+export function bubblesScene(view: WorkbenchView = 'explorer') {
   const timeRange = new SceneTimeRange({
     from: 'now-15m',
     to: 'now',
@@ -222,6 +224,38 @@ export function bubblesScene() {
     return () => sub.unsubscribe();
   });
 
+  const heatmapSection = new SceneFlexItem({
+    height: 350,
+    body: heatmapVizPanel,
+  });
+  const guidanceSection = new SceneFlexItem({
+    minHeight: 110,
+    body: new InvestigationGuidancePanel({
+      title: 'Next best actions',
+      summary: 'Use app navigation for page changes. Use panel actions only for data drilldowns.',
+      kpis: [
+        { label: 'View', value: view, color: 'blue' },
+        { label: 'Flow', value: 'selection -> compare -> traces', color: 'purple' },
+      ],
+      actions: [],
+    }),
+  });
+  const tracesSection = new SceneFlexItem({
+    minHeight: 170,
+    body: representativeTracesPanel,
+  });
+  const comparisonSection = new SceneFlexItem({
+    minHeight: 400,
+    body: comparisonPanel,
+  });
+
+  const orderedSections: SceneFlexItem[] =
+    view === 'comparisons'
+      ? [guidanceSection, comparisonSection, heatmapSection, tracesSection]
+      : view === 'evidence'
+        ? [guidanceSection, tracesSection, comparisonSection, heatmapSection]
+        : [guidanceSection, heatmapSection, tracesSection, comparisonSection];
+
   return new EmbeddedScene({
     $timeRange: timeRange,
     $variables: new SceneVariableSet({
@@ -230,20 +264,7 @@ export function bubblesScene() {
     $data: heatmapQuery,
     body: new SceneFlexLayout({
       direction: 'column',
-      children: [
-        new SceneFlexItem({
-          height: 350,
-          body: heatmapVizPanel,
-        }),
-        new SceneFlexItem({
-          minHeight: 170,
-          body: representativeTracesPanel,
-        }),
-        new SceneFlexItem({
-          minHeight: 400,
-          body: comparisonPanel,
-        }),
-      ],
+      children: orderedSections,
     }),
     controls: [
       viewMode,

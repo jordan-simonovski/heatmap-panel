@@ -16,8 +16,10 @@ import (
 	apiv1 "github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/api"
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/burn"
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/config"
+	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/grafana"
 	httpapi "github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/http"
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/outbox"
+	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/reconciler"
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/store"
 )
 
@@ -57,6 +59,19 @@ func main() {
 	server := httpapi.NewServer(st)
 	worker := outbox.NewWorker(st, burnSink, cfg.OutboxPollInterval, cfg.OutboxBatchSize)
 	go worker.Run(ctx)
+	if cfg.GrafanaURL != "" {
+		grafanaClient := grafana.NewClient(cfg.GrafanaURL, cfg.GrafanaToken, cfg.GrafanaHTTPTimeout)
+		alertWorker := reconciler.NewWorker(st, grafanaClient, reconciler.Config{
+			PollInterval:       cfg.AlertReconcilerPollInterval,
+			BatchSize:          cfg.AlertReconcilerBatchSize,
+			FolderUID:          cfg.GrafanaFolderUID,
+			GroupPrefix:        "slo",
+			RuleIntervalSecond: 60,
+			DefaultLabels:      cfg.AlertDefaultLabels,
+			DefaultAnnotations: cfg.AlertDefaultAnnotations,
+		})
+		go alertWorker.Run(ctx)
+	}
 
 	router := chi.NewRouter()
 	r := httpapi.WithCORS(apiv1.HandlerFromMux(server, router))

@@ -1,0 +1,3 @@
+ALTER TABLE slo_burn_state
+ADD COLUMN IF NOT EXISTS is_breached BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN IF NOT EXISTS breach_transition_at TIMESTAMPTZ;

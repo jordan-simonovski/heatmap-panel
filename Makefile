@@ -1,4 +1,5 @@
 .PHONY: install build dev up down restart clean \
+       bootstrap-grafana-token \
        typecheck lint lint-fix test test-ci e2e \
        build-panel build-timeseries build-app build-slo build-go build-slo-control-plane \
        openapi-generate openapi-lint \
@@ -42,14 +43,20 @@ dev-slo: ## Watch-build SLO app only
 	npm run dev --workspace=plugins/slo-app
 
 # ── Docker Compose ───────────────────────────────────────────────────
-up: build ## Build plugins then start the full stack
+up: build ## Build stack, create Grafana token, recreate control-plane with token, seed demo SLOs
 	@V="1.0.0-dev.$$(date +%s)"; \
 	for d in plugins/heatmap-panel/dist plugins/timeseries-selection-panel/dist plugins/heatmap-app/dist plugins/slo-app/dist; do \
 	  [ -f "$$d/plugin.json" ] && \
 	  sed -i '' "s/\"version\": \"1.0.0\"/\"version\": \"$$V\"/" "$$d/plugin.json" || true; \
 	done
 	docker compose -f docker/docker-compose.yml up --build -d
+	$(MAKE) bootstrap-grafana-token
+	@docker compose --env-file docker/.env.slo -f docker/docker-compose.yml up -d --no-deps --force-recreate slo-control-plane
 	@docker compose -f docker/docker-compose.yml restart grafana 2>/dev/null || true
+	@cd services/slo-control-plane && API_BASE_URL=http://localhost:8080 ./scripts/crud-demo.sh seed
+
+bootstrap-grafana-token: ## Create/update docker/.env.slo with Grafana service-account token
+	@./docker/create-grafana-token.sh
 
 down: ## Stop the stack
 	docker compose -f docker/docker-compose.yml down

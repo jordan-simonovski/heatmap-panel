@@ -295,6 +295,21 @@ paths:
           description: SLO deleted.
         '404':
           $ref: '#/components/responses/ProblemResponse'
+  /v1/slos/{sloId}/alert-status:
+    parameters:
+      - $ref: '#/components/parameters/SloId'
+    get:
+      tags: [slos]
+      operationId: getSLOAlertStatus
+      responses:
+        '200':
+          description: Alert reconciliation status for an SLO.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertStateListResponse'
+        '404':
+          $ref: '#/components/responses/ProblemResponse'
   /v1/burn-events:
     get:
       tags: [burn-events]
@@ -447,25 +462,34 @@ components:
       type: object
       additionalProperties: false
       required:
-        [id, serviceId, name, target, windowMinutes, openslo, datasourceType, datasourceUid, createdAt, updatedAt]
+        [id, serviceId, openslo, runtime, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         serviceId: { type: string, format: uuid }
+        openslo: { type: string, minLength: 1 }
+        runtime:
+          $ref: '#/components/schemas/SLORuntime'
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SLORuntime:
+      type: object
+      additionalProperties: false
+      required: [name, target, windowMinutes, route, type, threshold, datasourceType, datasourceUid]
+      properties:
         name: { type: string, minLength: 1, maxLength: 128 }
         description: { type: string }
+        userExperience: { type: string }
         target: { type: number, minimum: 0, maximum: 1 }
         windowMinutes: { type: integer, minimum: 1 }
-        openslo: { type: string, minLength: 1 }
-        canonical:
-          type: object
-          additionalProperties: true
+        route: { type: string, minLength: 1 }
+        type:
+          type: string
+          enum: [latency, error_rate]
+        threshold: { type: number, minimum: 0 }
         datasourceType:
           type: string
           enum: [clickhouse, prometheus]
-        datasourceUid:
-          type: string
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
+        datasourceUid: { type: string, minLength: 1 }
     BurnEvent:
       type: object
       additionalProperties: false
@@ -477,12 +501,29 @@ components:
         sloId: { type: string, format: uuid }
         eventType:
           type: string
-          enum: [burn_started, burn_continued, burn_resolved]
+          enum: [burn_started, burn_continued, burn_resolved, error_budget_exhausted, error_budget_recovered]
         value: { type: number }
         threshold: { type: number }
         observedAt: { type: string, format: date-time }
         source: { type: string }
         idempotencyKey: { type: string }
+    AlertState:
+      type: object
+      additionalProperties: false
+      required:
+        [sloId, alertKind, grafanaRuleUid, grafanaNamespaceUid, grafanaRuleGroup, status, lastAppliedSpecHash]
+      properties:
+        sloId: { type: string, format: uuid }
+        alertKind:
+          type: string
+          enum: [burn, breach]
+        grafanaRuleUid: { type: string }
+        grafanaNamespaceUid: { type: string }
+        grafanaRuleGroup: { type: string }
+        status: { type: string }
+        lastError: { type: string }
+        lastAppliedSpecHash: { type: string }
+        lastReconciledAt: { type: string, format: date-time }
     Pagination:
       type: object
       additionalProperties: false
@@ -527,6 +568,14 @@ components:
           type: array
           items: { $ref: '#/components/schemas/BurnEvent' }
         page: { $ref: '#/components/schemas/Pagination' }
+    AlertStateListResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AlertState' }
     CreateTeamRequest:
       type: object
       additionalProperties: false
@@ -566,29 +615,13 @@ components:
     CreateSLORequest:
       type: object
       additionalProperties: false
-      required: [serviceId, name, target, windowMinutes, openslo, datasourceType, datasourceUid]
+      required: [serviceId, openslo]
       properties:
         serviceId: { type: string, format: uuid }
-        name: { type: string, minLength: 1, maxLength: 128 }
-        description: { type: string }
-        target: { type: number, minimum: 0, maximum: 1 }
-        windowMinutes: { type: integer, minimum: 1 }
         openslo: { type: string, minLength: 1 }
-        datasourceType:
-          type: string
-          enum: [clickhouse, prometheus]
-        datasourceUid: { type: string, minLength: 1 }
     UpdateSLORequest:
       type: object
       additionalProperties: false
-      required: [name, target, windowMinutes, openslo, datasourceType, datasourceUid]
+      required: [openslo]
       properties:
-        name: { type: string, minLength: 1, maxLength: 128 }
-        description: { type: string }
-        target: { type: number, minimum: 0, maximum: 1 }
-        windowMinutes: { type: integer, minimum: 1 }
         openslo: { type: string, minLength: 1 }
-        datasourceType:
-          type: string
-          enum: [clickhouse, prometheus]
-        datasourceUid: { type: string, minLength: 1 }

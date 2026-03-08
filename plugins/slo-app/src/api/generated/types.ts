@@ -138,6 +138,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/slos/{sloId}/alert-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sloId: components["parameters"]["SloId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getSLOAlertStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/burn-events": {
         parameters: {
             query?: never;
@@ -207,21 +225,26 @@ export interface components {
             id: string;
             /** Format: uuid */
             serviceId: string;
-            name: string;
-            description?: string;
-            target: number;
-            windowMinutes: number;
             openslo: string;
-            canonical?: {
-                [key: string]: unknown;
-            };
-            /** @enum {string} */
-            datasourceType: "clickhouse" | "prometheus";
-            datasourceUid: string;
+            runtime: components["schemas"]["SLORuntime"];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        SLORuntime: {
+            name: string;
+            description?: string;
+            userExperience?: string;
+            target: number;
+            windowMinutes: number;
+            route: string;
+            /** @enum {string} */
+            type: "latency" | "error_rate";
+            threshold: number;
+            /** @enum {string} */
+            datasourceType: "clickhouse" | "prometheus";
+            datasourceUid: string;
         };
         BurnEvent: {
             /** Format: uuid */
@@ -231,13 +254,27 @@ export interface components {
             /** Format: uuid */
             sloId: string;
             /** @enum {string} */
-            eventType: "burn_started" | "burn_continued" | "burn_resolved";
+            eventType: "burn_started" | "burn_continued" | "burn_resolved" | "error_budget_exhausted" | "error_budget_recovered";
             value: number;
             threshold: number;
             /** Format: date-time */
             observedAt: string;
             source: string;
             idempotencyKey: string;
+        };
+        AlertState: {
+            /** Format: uuid */
+            sloId: string;
+            /** @enum {string} */
+            alertKind: "burn" | "breach";
+            grafanaRuleUid: string;
+            grafanaNamespaceUid: string;
+            grafanaRuleGroup: string;
+            status: string;
+            lastError?: string;
+            lastAppliedSpecHash: string;
+            /** Format: date-time */
+            lastReconciledAt?: string;
         };
         Pagination: {
             page: number;
@@ -259,6 +296,9 @@ export interface components {
         BurnEventListResponse: {
             items: components["schemas"]["BurnEvent"][];
             page: components["schemas"]["Pagination"];
+        };
+        AlertStateListResponse: {
+            items: components["schemas"]["AlertState"][];
         };
         CreateTeamRequest: {
             name: string;
@@ -289,24 +329,10 @@ export interface components {
         CreateSLORequest: {
             /** Format: uuid */
             serviceId: string;
-            name: string;
-            description?: string;
-            target: number;
-            windowMinutes: number;
             openslo: string;
-            /** @enum {string} */
-            datasourceType: "clickhouse" | "prometheus";
-            datasourceUid: string;
         };
         UpdateSLORequest: {
-            name: string;
-            description?: string;
-            target: number;
-            windowMinutes: number;
             openslo: string;
-            /** @enum {string} */
-            datasourceType: "clickhouse" | "prometheus";
-            datasourceUid: string;
         };
     };
     responses: {
@@ -745,6 +771,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            404: components["responses"]["ProblemResponse"];
+        };
+    };
+    getSLOAlertStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sloId: components["parameters"]["SloId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Alert reconciliation status for an SLO. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertStateListResponse"];
+                };
             };
             404: components["responses"]["ProblemResponse"];
         };

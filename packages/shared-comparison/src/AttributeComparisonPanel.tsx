@@ -15,6 +15,7 @@ import { lastValueFrom } from 'rxjs';
 import { HeatmapSelection } from './types';
 import { ComparisonResult, ValueDistribution, computeComparison } from './comparison';
 import { getTopDisplayValues } from './displayValues';
+import { buildFilterClause } from './sqlFilters';
 
 export interface ComparisonAttribute {
   /** Display label shown on the card */
@@ -99,13 +100,9 @@ export class AttributeComparisonPanel extends SceneObjectBase<AttributeCompariso
     // Ad-hoc filters
     if (this.adHocVar) {
       for (const f of this.adHocVar.state.filters) {
-        const key = f.key;
-        const val = f.value;
-        const op = f.operator;
-        if (op === '=') {
-          parts.push(`SpanAttributes['${key}'] = '${val}'`);
-        } else if (op === '!=') {
-          parts.push(`SpanAttributes['${key}'] != '${val}'`);
+        const clause = buildFilterClause(f.key, f.value, f.operator);
+        if (clause) {
+          parts.push(clause);
         }
       }
     }
@@ -315,7 +312,7 @@ export class AttributeComparisonPanel extends SceneObjectBase<AttributeCompariso
     if (!selection) {
       return (
         <div className={styles.placeholder}>
-          Draw a box on the heatmap above to select spans for comparison
+          Select an outlier region, then compare against baseline to isolate causal attributes.
         </div>
       );
     }
@@ -328,6 +325,14 @@ export class AttributeComparisonPanel extends SceneObjectBase<AttributeCompariso
     const filtered = needle
       ? results.filter((r) => r.attribute.toLowerCase().includes(needle))
       : results;
+
+    if (filtered.length === 0) {
+      return (
+        <div className={styles.placeholder}>
+          No differentiating attributes found for this slice. Try widening time range or changing filters.
+        </div>
+      );
+    }
 
     return (
       <div>
@@ -422,11 +427,11 @@ function SignificanceLegend() {
       </span>
       <span className={styles.legendSep}>|</span>
       <span className={styles.legendItem}>
-        <span className={styles.legendBar} style={{ background: '#4285f4' }} />
+        <span className={`${styles.legendBar} ${styles.legendBarBaseline}`} />
         <span>Baseline</span>
       </span>
       <span className={styles.legendItem}>
-        <span className={styles.legendBar} style={{ background: '#f4b400' }} />
+        <span className={`${styles.legendBar} ${styles.legendBarSelection}`} />
         <span>Selection</span>
       </span>
     </div>
@@ -552,32 +557,33 @@ function DonutPair({
   baselinePresence: number;
   selectionPresence: number;
 }) {
+  const styles = useStyles2(getDonutStyles);
   const size = 16;
   const r = 6;
   const stroke = 3;
   return (
     <div style={{ display: 'flex', gap: 4 }}>
       <svg width={size} height={size}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#ccc" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" className={styles.track} strokeWidth={stroke} />
         <circle
           cx={size / 2}
           cy={size / 2}
           r={r}
           fill="none"
-          stroke="#4285f4"
+          className={styles.baseline}
           strokeWidth={stroke}
           strokeDasharray={`${baselinePresence * 2 * Math.PI * r} ${2 * Math.PI * r}`}
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
       </svg>
       <svg width={size} height={size}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#ccc" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" className={styles.track} strokeWidth={stroke} />
         <circle
           cx={size / 2}
           cy={size / 2}
           r={r}
           fill="none"
-          stroke="#f4b400"
+          className={styles.selection}
           strokeWidth={stroke}
           strokeDasharray={`${selectionPresence * 2 * Math.PI * r} ${2 * Math.PI * r}`}
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
@@ -585,6 +591,20 @@ function DonutPair({
       </svg>
     </div>
   );
+}
+
+function getDonutStyles(theme: GrafanaTheme2) {
+  return {
+    track: css({
+      stroke: theme.colors.border.weak,
+    }),
+    baseline: css({
+      stroke: theme.colors.primary.main,
+    }),
+    selection: css({
+      stroke: theme.colors.warning.main,
+    }),
+  };
 }
 
 // --- Styles ---
@@ -695,13 +715,13 @@ function getCardStyles(theme: GrafanaTheme2) {
     }),
     barBaseline: css({
       height: '5px',
-      backgroundColor: '#4285f4',
+      backgroundColor: theme.colors.primary.main,
       borderRadius: '1px',
       transition: 'width 0.3s ease',
     }),
     barSelection: css({
       height: '5px',
-      backgroundColor: '#f4b400',
+      backgroundColor: theme.colors.warning.main,
       borderRadius: '1px',
       transition: 'width 0.3s ease',
     }),
@@ -785,6 +805,12 @@ function getLegendStyles(theme: GrafanaTheme2) {
       height: '5px',
       borderRadius: '1px',
       flexShrink: 0,
+    }),
+    legendBarBaseline: css({
+      background: theme.colors.primary.main,
+    }),
+    legendBarSelection: css({
+      background: theme.colors.warning.main,
     }),
     legendSep: css({
       color: theme.colors.border.weak,

@@ -62,9 +62,9 @@ services:
       - OTEL_EXPORTER_OTLP_INSECURE=true
       - BURN_PROFILE=deterministic
       - BURN_STEEP_ROUTE=/cart/checkout
-      - BURN_STEEP_ERROR_RATE=0.08
+      - BURN_STEEP_ERROR_RATE=0.003
       - BURN_SLOW_ROUTE=/api/auth
-      - BURN_SLOW_ERROR_RATE=0.003
+      - BURN_SLOW_ERROR_RATE=0.001
     depends_on:
       - otel-collector
     networks:
@@ -81,6 +81,12 @@ services:
       SLO_API_CLICKHOUSE_DSN: "clickhouse://clickhouse-server:9000/default"
       SLO_API_OUTBOX_POLL_INTERVAL: "5s"
       SLO_API_OUTBOX_BATCH_SIZE: "100"
+      SLO_API_GRAFANA_URL: "http://grafana:3000"
+      SLO_API_GRAFANA_TOKEN: "${SLO_GRAFANA_TOKEN:-}"
+      SLO_API_GRAFANA_FOLDER_UID: "${SLO_GRAFANA_FOLDER_UID:-slo-managed}"
+      SLO_API_ALERT_RECONCILER_POLL_INTERVAL: "${SLO_API_ALERT_RECONCILER_POLL_INTERVAL:-30s}"
+      SLO_API_ALERT_RECONCILER_BATCH_SIZE: "${SLO_API_ALERT_RECONCILER_BATCH_SIZE:-100}"
+      SLO_API_GRAFANA_HTTP_TIMEOUT: "${SLO_API_GRAFANA_HTTP_TIMEOUT:-10s}"
     ports:
       - "8080:8080"
     depends_on:
@@ -127,6 +133,7 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
     volumes:
+      - grafana-data:/var/lib/grafana
       - ./provisioning:/etc/grafana/provisioning
       - ../plugins/heatmap-panel/dist:/var/lib/grafana/plugins/heatmap-bubbles-panel
       - ../plugins/timeseries-selection-panel/dist:/var/lib/grafana/plugins/timeseries-selection-panel
@@ -144,3 +151,6 @@ services:
 
 networks:
   heatmap:
+
+volumes:
+  grafana-data:

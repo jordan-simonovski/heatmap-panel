@@ -3,7 +3,7 @@ import { PanelProps, getFieldDisplayName, FieldType } from '@grafana/data';
 import { getAppEvents } from '@grafana/runtime';
 import { useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
-import { TimeseriesSelectionOptions, TimeseriesSelection, TimeseriesSelectionEvent } from '../types';
+import { TimeseriesSelectionOptions, TimeseriesSelection, TimeseriesSelectionClearedEvent, TimeseriesSelectionEvent } from '../types';
 
 interface Props extends PanelProps<TimeseriesSelectionOptions> {}
 
@@ -340,6 +340,7 @@ export const TimeseriesPanel: React.FC<Props> = ({ options, data, width, height,
     if (x2 - x1 < 5) {
       setDrag(null);
       setSelection(null);
+      getAppEvents().publish(new TimeseriesSelectionClearedEvent(null));
       return;
     }
 

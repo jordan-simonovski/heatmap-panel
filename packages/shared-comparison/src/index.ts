@@ -1,4 +1,5 @@
 export { HeatmapSelectionEvent } from './types';
+export { HeatmapSelectionClearedEvent } from './types';
 export type { HeatmapSelection } from './types';
 export { computeComparison } from './comparison';
 export type { ValueDistribution, ComparisonResult } from './comparison';
@@ -10,3 +11,5 @@ export { RepresentativeTracesPanel } from './representativeTraces';
 export type { RepresentativeTracesConfig } from './representativeTraces';
 export { rankRepresentativeTraces } from './representativeTraceRanking';
 export type { RepresentativeTraceRow } from './representativeTraceRanking';
+export { buildFilterClause, filterExpressionForKey, TOP_LEVEL_FILTER_COLUMNS } from './sqlFilters';
+export { InvestigationGuidancePanel } from './InvestigationGuidancePanel';

@@ -4,20 +4,20 @@ global.IntersectionObserver = class IntersectionObserver {
   disconnect() {}
 };
 
-const { bubblesPage } = require('./pages/Bubbles/bubblesPage');
+const { explorerPage } = require('./pages/Bubbles/bubblesPage');
 const { tracePage } = require('./pages/Trace/tracePage');
 const { prefixRoute } = require('./utils/utils.routing');
 const { ROUTES } = require('./constants');
 
 describe('trace routing', () => {
-  it('registers base bubbles page without nested drilldowns', () => {
-    expect(bubblesPage.state.routePath).toBe(ROUTES.Bubbles);
-    expect(bubblesPage.state.drilldowns).toBeUndefined();
+  it('registers explorer page as the default workbench route', () => {
+    expect(explorerPage.state.routePath).toBe(ROUTES.Explorer);
+    expect(explorerPage.state.drilldowns).toBeUndefined();
   });
 
-  it('registers explicit trace route page with bubbles parent', () => {
+  it('registers explicit trace route page with explorer parent', () => {
     expect(tracePage.state.url).toBe(prefixRoute(ROUTES.Trace));
     expect(tracePage.state.routePath).toBe(`${ROUTES.Trace}/:traceId`);
-    expect(tracePage.state.getParentPage()).toBe(bubblesPage);
+    expect(tracePage.state.getParentPage()).toBe(explorerPage);
   });
 });

@@ -3,7 +3,7 @@ import { PanelProps, getFieldDisplayName, FieldType, LoadingState } from '@grafa
 import { getAppEvents, locationService, PanelDataErrorView } from '@grafana/runtime';
 import { useTheme2 } from '@grafana/ui';
 import { css } from '@emotion/css';
-import { HeatmapOptions, HeatmapSelection, HeatmapSelectionEvent } from '../types';
+import { HeatmapOptions, HeatmapSelection, HeatmapSelectionClearedEvent, HeatmapSelectionEvent } from '../types';
 
 interface Props extends PanelProps<HeatmapOptions> {}
 
@@ -446,6 +446,7 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
     if (x2 - x1 < 5 && y2 - y1 < 5) {
       setDrag(null);
       setSelection(null);
+      getAppEvents().publish(new HeatmapSelectionClearedEvent(null));
       return;
     }
 
@@ -474,6 +475,22 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
     setContextMenu(null);
   }, [contextMenu]);
 
+  const appRootPath = useCallback(() => {
+    const path = locationService.getLocation().pathname ?? window.location.pathname;
+    const match = path.match(/^\/a\/[^/]+/);
+    return match ? match[0] : null;
+  }, []);
+
+  const handleOpenExplorer = useCallback(() => {
+    if (!contextMenu) { return; }
+    getAppEvents().publish(new HeatmapSelectionEvent(contextMenu.payload));
+    const root = appRootPath();
+    if (root) {
+      locationService.push(`${root}/explorer`);
+    }
+    setContextMenu(null);
+  }, [appRootPath, contextMenu]);
+
   const handleZoom = useCallback(() => {
     if (!contextMenu) { return; }
     const { from, to } = contextMenu.payload.timeRange;
@@ -492,6 +509,12 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
 
   const dismissMenu = useCallback(() => {
     setContextMenu(null);
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setContextMenu(null);
+    setSelection(null);
+    getAppEvents().publish(new HeatmapSelectionClearedEvent(null));
   }, []);
 
   const singleTrace = contextMenu && contextMenu.payload.traceIds.length === 1;
@@ -567,8 +590,14 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
 
           <MenuItem
             icon="M3 3h18v2H3V3zm0 8h18v2H3v-2zm0 8h18v2H3v-2z"
-            label="Analyse Outliers"
+            label="Analyze selection"
             onClick={handleBubbles}
+            theme={theme}
+          />
+          <MenuItem
+            icon="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 .34-.03.67-.08 1h2.02c.03-.33.06-.66.06-1 0-4.42-3.58-8-8-8zM6.08 11H4.06c-.03.33-.06.66-.06 1 0 4.42 3.58 8 8 8v3l4-4-4-4v3c-3.31 0-6-2.69-6-6 0-.34.03-.67.08-1z"
+            label="Open explorer view"
+            onClick={handleOpenExplorer}
             theme={theme}
           />
           <MenuItem
@@ -592,6 +621,13 @@ export const HeatmapPanel: React.FC<Props> = ({ options, data, width, height, ti
               margin-top: 2px;
             `}
           >
+            <MenuItem
+              icon="M12 2C6.49 2 2 6.49 2 12s4.49 10 10 10c3.7 0 6.91-2.01 8.64-5H18.3c-1.38 1.7-3.49 2.8-5.86 2.8-4.14 0-7.5-3.36-7.5-7.5s3.36-7.5 7.5-7.5c2.2 0 4.18.95 5.55 2.45L15 10h7V3l-2.82 2.82A9.944 9.944 0 0012 2z"
+              label="Reset selection"
+              onClick={clearSelection}
+              theme={theme}
+              subtle
+            />
             <MenuItem
               icon="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"
               label="Dismiss"

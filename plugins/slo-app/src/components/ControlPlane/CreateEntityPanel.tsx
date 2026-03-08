@@ -31,6 +31,8 @@ export function CreateEntityPanel({ apiUrl, teams, services, onRefresh }: Props)
   const [sloTeamId, setSloTeamId] = useState<string>('');
   const [sloServiceId, setSloServiceId] = useState<string>('');
   const [sloName, setSloName] = useState('');
+  const [sloDescription, setSloDescription] = useState('');
+  const [sloUserExperience, setSloUserExperience] = useState('');
   const [sloTarget, setSloTarget] = useState('0.99');
   const [sloWindowMinutes, setSloWindowMinutes] = useState('30');
   const [sloDatasourceUid, setSloDatasourceUid] = useState('clickhouse');
@@ -67,31 +69,46 @@ export function CreateEntityPanel({ apiUrl, teams, services, onRefresh }: Props)
       setServiceSlug('');
       setServiceOwnerTeamId('');
     } else {
+      const objectName = toObjectName(sloName || 'generated-slo');
       const openslo = [
         'apiVersion: openslo/v1',
         'kind: SLO',
         'metadata:',
-        `  name: ${sloName || 'generated-slo'}`,
+        `  name: ${objectName}`,
+        '  displayName: ' + (sloName || 'Generated SLO'),
+        '  annotations:',
+        `    heatmap.local/userExperience: ${sloUserExperience || sloName || 'Critical user journey'}`,
         'spec:',
+        `  description: ${sloDescription || 'Protect a critical user experience for this service.'}`,
         '  service: generated-service',
-        '  objective:',
-        `    target: ${sloTarget}`,
+        '  budgetingMethod: Occurrences',
+        '  objectives:',
+        `    - target: ${sloTarget}`,
+        '  timeWindow:',
+        `    - duration: ${sloWindowMinutes}m`,
+        '      isRolling: true',
         '  indicator:',
-        `    route: ${sloRoute}`,
-        `    type: ${sloType}`,
-        `    threshold: ${sloThreshold}`,
+        '    metadata:',
+        `      name: ${objectName}-indicator`,
+        '    spec:',
+        '      thresholdMetric:',
+        '        metricSource:',
+        '          type: clickhouse',
+        '          spec:',
+        `            route: ${sloRoute}`,
+        `            type: ${sloType}`,
+        `            threshold: ${sloThreshold}`,
+        `            datasourceUid: ${sloDatasourceUid}`,
+        '            datasourceType: clickhouse',
       ].join('\n');
 
       await client.createSLO({
         serviceId: sloServiceId,
-        name: sloName,
-        target: Number(sloTarget),
-        windowMinutes: Number(sloWindowMinutes),
         openslo,
-        datasourceType: 'clickhouse',
-        datasourceUid: sloDatasourceUid,
       });
       setSloName('');
+      setSloDescription('');
+      setSloUserExperience('');
     }
     await onRefresh();
   };
@@ -166,6 +183,21 @@ export function CreateEntityPanel({ apiUrl, teams, services, onRefresh }: Props)
                   <Field label="SLO name">
                     <Input value={sloName} onChange={(e) => setSloName(e.currentTarget.value)} />
                   </Field>
+                  <Field label="SLO description">
+                    <TextArea
+                      rows={3}
+                      value={sloDescription}
+                      onChange={(e) => setSloDescription(e.currentTarget.value)}
+                      placeholder="Describe what user experience this SLO protects (e.g. Users can complete checkout successfully)."
+                    />
+                  </Field>
+                  <Field label="User experience intent">
+                    <Input
+                      value={sloUserExperience}
+                      onChange={(e) => setSloUserExperience(e.currentTarget.value)}
+                      placeholder="e.g. Users can check out without errors"
+                    />
+                  </Field>
                   <Field label="Target">
                     <Input value={sloTarget} onChange={(e) => setSloTarget(e.currentTarget.value)} />
                   </Field>
@@ -199,15 +231,32 @@ export function CreateEntityPanel({ apiUrl, teams, services, onRefresh }: Props)
                         'apiVersion: openslo/v1',
                         'kind: SLO',
                         'metadata:',
-                        `  name: ${sloName || 'generated-slo'}`,
+                        `  name: ${toObjectName(sloName || 'generated-slo')}`,
+                        '  displayName: ' + (sloName || 'Generated SLO'),
+                        '  annotations:',
+                        `    heatmap.local/userExperience: ${sloUserExperience || sloName || 'Critical user journey'}`,
                         'spec:',
+                        `  description: ${sloDescription || 'Protect a critical user experience for this service.'}`,
                         '  service: generated-service',
-                        '  objective:',
-                        `    target: ${sloTarget}`,
+                        '  budgetingMethod: Occurrences',
+                        '  objectives:',
+                        `    - target: ${sloTarget}`,
+                        '  timeWindow:',
+                        `    - duration: ${sloWindowMinutes}m`,
+                        '      isRolling: true',
                         '  indicator:',
-                        `    route: ${sloRoute}`,
-                        `    type: ${sloType}`,
-                        `    threshold: ${sloThreshold}`,
+                        '    metadata:',
+                        `      name: ${toObjectName(sloName || 'generated-slo')}-indicator`,
+                        '    spec:',
+                        '      thresholdMetric:',
+                        '        metricSource:',
+                        '          type: clickhouse',
+                        '          spec:',
+                        `            route: ${sloRoute}`,
+                        `            type: ${sloType}`,
+                        `            threshold: ${sloThreshold}`,
+                        `            datasourceUid: ${sloDatasourceUid}`,
+                        '            datasourceType: clickhouse',
                       ].join('\n')}
                     />
                   </Field>
@@ -221,4 +270,9 @@ export function CreateEntityPanel({ apiUrl, teams, services, onRefresh }: Props)
       </Stack>
     </FieldSet>
   );
+}
+
+function toObjectName(input: string): string {
+  const normalized = input.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return normalized || 'generated-slo';
 }

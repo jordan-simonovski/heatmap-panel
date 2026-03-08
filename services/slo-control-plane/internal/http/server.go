@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
 	apiv1 "github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/api"
+	opensloparser "github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/openslo"
 	"github.com/jsimonovski/heatmap-panel/services/slo-control-plane/internal/store"
 )
 
@@ -231,17 +233,23 @@ func (s *Server) CreateSLO(w http.ResponseWriter, r *http.Request, _ apiv1.Creat
 		writeProblem(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
 		return
 	}
+	bundle, err := opensloparser.ParseBundle(req.Openslo)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid_openslo", err.Error())
+		return
+	}
+	runtimeMap := opensloparser.RuntimeToMap(bundle.Runtime)
 	slo := store.SLO{
 		ID:             uuid.New(),
 		ServiceID:      uuid.UUID(req.ServiceId),
-		Name:           strings.TrimSpace(req.Name),
-		Description:    strPtr(req.Description),
-		Target:         req.Target,
-		WindowMinutes:  req.WindowMinutes,
+		Name:           bundle.Runtime.Name,
+		Description:    bundle.Runtime.Description,
+		Target:         bundle.Runtime.Target,
+		WindowMinutes:  bundle.Runtime.WindowMinutes,
 		OpenSLO:        req.Openslo,
-		Canonical:      map[string]any{},
-		DatasourceType: string(req.DatasourceType),
-		DatasourceUID:  req.DatasourceUid,
+		Canonical:      runtimeMap,
+		DatasourceType: bundle.Runtime.DatasourceType,
+		DatasourceUID:  bundle.Runtime.DatasourceUID,
 	}
 	ctx := context.Background()
 	tx, err := s.store.BeginTx(ctx)
@@ -252,6 +260,10 @@ func (s *Server) CreateSLO(w http.ResponseWriter, r *http.Request, _ apiv1.Creat
 	defer tx.Rollback()
 	created, err := s.store.CreateSLO(ctx, tx, slo)
 	if err != nil {
+		writeProblem(w, statusFromError(err), "create_slo_failed", err.Error())
+		return
+	}
+	if err := s.store.ReplaceSLOOpenSLOObjectsTx(ctx, tx, created.ID, toStoreObjects(bundle.Objects)); err != nil {
 		writeProblem(w, statusFromError(err), "create_slo_failed", err.Error())
 		return
 	}
@@ -277,6 +289,11 @@ func (s *Server) UpdateSLO(w http.ResponseWriter, r *http.Request, sloId apiv1.S
 		writeProblem(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
 		return
 	}
+	bundle, err := opensloparser.ParseBundle(req.Openslo)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, "invalid_openslo", err.Error())
+		return
+	}
 	ctx := context.Background()
 	tx, err := s.store.BeginTx(ctx)
 	if err != nil {
@@ -289,15 +306,20 @@ func (s *Server) UpdateSLO(w http.ResponseWriter, r *http.Request, sloId apiv1.S
 		writeProblem(w, statusFromError(err), "slo_not_found", err.Error())
 		return
 	}
-	current.Name = strings.TrimSpace(req.Name)
-	current.Description = strPtr(req.Description)
-	current.Target = req.Target
-	current.WindowMinutes = req.WindowMinutes
+	current.Name = bundle.Runtime.Name
+	current.Description = bundle.Runtime.Description
+	current.Target = bundle.Runtime.Target
+	current.WindowMinutes = bundle.Runtime.WindowMinutes
 	current.OpenSLO = req.Openslo
-	current.DatasourceType = string(req.DatasourceType)
-	current.DatasourceUID = req.DatasourceUid
+	current.Canonical = opensloparser.RuntimeToMap(bundle.Runtime)
+	current.DatasourceType = bundle.Runtime.DatasourceType
+	current.DatasourceUID = bundle.Runtime.DatasourceUID
 	updated, err := s.store.UpdateSLO(ctx, tx, current)
 	if err != nil {
+		writeProblem(w, statusFromError(err), "update_slo_failed", err.Error())
+		return
+	}
+	if err := s.store.ReplaceSLOOpenSLOObjectsTx(ctx, tx, updated.ID, toStoreObjects(bundle.Objects)); err != nil {
 		writeProblem(w, statusFromError(err), "update_slo_failed", err.Error())
 		return
 	}
@@ -314,6 +336,44 @@ func (s *Server) DeleteSLO(w http.ResponseWriter, _ *http.Request, sloId apiv1.S
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) GetSLOAlertStatus(w http.ResponseWriter, _ *http.Request, sloId apiv1.SloId) {
+	states, err := s.store.ListAlertStatesBySLO(context.Background(), uuid.UUID(sloId))
+	if err != nil {
+		writeProblem(w, statusFromError(err), "get_slo_alert_status_failed", err.Error())
+		return
+	}
+	resp := apiv1.AlertStateListResponse{
+		Items: make([]apiv1.AlertState, 0, len(states)),
+	}
+	for _, st := range states {
+		kind := apiv1.Burn
+		if st.AlertKind == store.AlertKindBreach {
+			kind = apiv1.Breach
+		}
+		var lastErr *string
+		if st.LastError != "" {
+			lastErr = &st.LastError
+		}
+		var lastReconciledAt *time.Time
+		if st.LastReconciledAt.Valid {
+			tm := st.LastReconciledAt.Time
+			lastReconciledAt = &tm
+		}
+		resp.Items = append(resp.Items, apiv1.AlertState{
+			SloId:               st.SLOID,
+			AlertKind:           kind,
+			GrafanaRuleUid:      st.GrafanaRuleUID,
+			GrafanaNamespaceUid: st.GrafanaNamespaceUID,
+			GrafanaRuleGroup:    st.GrafanaRuleGroup,
+			LastAppliedSpecHash: st.LastAppliedSpecHash,
+			Status:              st.Status,
+			LastError:           lastErr,
+			LastReconciledAt:    lastReconciledAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) ListBurnEvents(w http.ResponseWriter, _ *http.Request, params apiv1.ListBurnEventsParams) {
@@ -407,36 +467,50 @@ func serviceToAPI(srv store.Service) apiv1.Service {
 }
 
 func sloToAPI(s store.SLO) apiv1.SLO {
-	canonical := s.Canonical
-	var dsType apiv1.SLODatasourceType
-	if s.DatasourceType == "prometheus" {
-		dsType = apiv1.SLODatasourceTypePrometheus
+	runtime := opensloparser.MapToRuntime(s.Canonical)
+	var dsType apiv1.SLORuntimeDatasourceType
+	if runtime.DatasourceType == "prometheus" {
+		dsType = apiv1.Prometheus
 	} else {
-		dsType = apiv1.SLODatasourceTypeClickhouse
+		dsType = apiv1.Clickhouse
 	}
 	var desc *string
-	if s.Description != "" {
-		desc = &s.Description
+	if runtime.Description != "" {
+		desc = &runtime.Description
+	}
+	var ux *string
+	if runtime.UserExperience != "" {
+		ux = &runtime.UserExperience
 	}
 	return apiv1.SLO{
 		Id:             s.ID,
 		ServiceId:      s.ServiceID,
-		Name:           s.Name,
-		Description:    desc,
-		Target:         s.Target,
-		WindowMinutes:  s.WindowMinutes,
 		Openslo:        s.OpenSLO,
-		Canonical:      &canonical,
-		DatasourceType: dsType,
-		DatasourceUid:  s.DatasourceUID,
+		Runtime: apiv1.SLORuntime{
+			Name:           runtime.Name,
+			Description:    desc,
+			UserExperience: ux,
+			Target:         runtime.Target,
+			WindowMinutes:  runtime.WindowMinutes,
+			Route:          runtime.Route,
+			Type:           apiv1.SLORuntimeType(runtime.Type),
+			Threshold:      runtime.Threshold,
+			DatasourceType: dsType,
+			DatasourceUid:  runtime.DatasourceUID,
+		},
 		CreatedAt:      s.CreatedAt,
 		UpdatedAt:      s.UpdatedAt,
 	}
 }
 
-func strPtr(s *string) string {
-	if s == nil {
-		return ""
+func toStoreObjects(objs []opensloparser.Object) []store.OpenSLOObject {
+	out := make([]store.OpenSLOObject, 0, len(objs))
+	for _, obj := range objs {
+		out = append(out, store.OpenSLOObject{
+			Kind: obj.Kind,
+			Name: obj.Name,
+			JSON: obj.JSON,
+		})
 	}
-	return *s
+	return out
 }

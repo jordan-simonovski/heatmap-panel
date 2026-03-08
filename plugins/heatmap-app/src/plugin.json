@@ -20,8 +20,8 @@
   "includes": [
     {
       "type": "page",
-      "name": "Bubbles",
-      "path": "/a/%PLUGIN_ID%/bubbles",
+      "name": "Explorer",
+      "path": "/a/%PLUGIN_ID%/explorer",
       "addToNav": true,
       "defaultNav": true
     }

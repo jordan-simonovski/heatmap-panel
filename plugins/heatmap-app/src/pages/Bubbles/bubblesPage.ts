@@ -3,10 +3,10 @@ import { bubblesScene } from './bubblesScene';
 import { prefixRoute } from '../../utils/utils.routing';
 import { ROUTES } from '../../constants';
 
-export const bubblesPage = new SceneAppPage({
-  title: 'Bubbles - Trace Analysis',
-  url: prefixRoute(ROUTES.Bubbles),
-  routePath: ROUTES.Bubbles,
-  subTitle: 'Select spans on the heatmap to compare attribute distributions between selection and baseline.',
-  getScene: () => bubblesScene(),
+export const explorerPage = new SceneAppPage({
+  title: 'Explorer',
+  url: prefixRoute(ROUTES.Explorer),
+  routePath: ROUTES.Explorer,
+  subTitle: 'Select spans on the heatmap and continue investigation from the explorer.',
+  getScene: () => bubblesScene('explorer'),
 });

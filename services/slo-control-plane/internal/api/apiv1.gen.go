@@ -21,11 +21,31 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AlertStateAlertKind.
+const (
+	Breach AlertStateAlertKind = "breach"
+	Burn   AlertStateAlertKind = "burn"
+)
+
+// Valid indicates whether the value is a known member of the AlertStateAlertKind enum.
+func (e AlertStateAlertKind) Valid() bool {
+	switch e {
+	case Breach:
+		return true
+	case Burn:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for BurnEventEventType.
 const (
-	BurnContinued BurnEventEventType = "burn_continued"
-	BurnResolved  BurnEventEventType = "burn_resolved"
-	BurnStarted   BurnEventEventType = "burn_started"
+	BurnContinued        BurnEventEventType = "burn_continued"
+	BurnResolved         BurnEventEventType = "burn_resolved"
+	BurnStarted          BurnEventEventType = "burn_started"
+	ErrorBudgetExhausted BurnEventEventType = "error_budget_exhausted"
+	ErrorBudgetRecovered BurnEventEventType = "error_budget_recovered"
 )
 
 // Valid indicates whether the value is a known member of the BurnEventEventType enum.
@@ -37,23 +57,9 @@ func (e BurnEventEventType) Valid() bool {
 		return true
 	case BurnStarted:
 		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for CreateSLORequestDatasourceType.
-const (
-	CreateSLORequestDatasourceTypeClickhouse CreateSLORequestDatasourceType = "clickhouse"
-	CreateSLORequestDatasourceTypePrometheus CreateSLORequestDatasourceType = "prometheus"
-)
-
-// Valid indicates whether the value is a known member of the CreateSLORequestDatasourceType enum.
-func (e CreateSLORequestDatasourceType) Valid() bool {
-	switch e {
-	case CreateSLORequestDatasourceTypeClickhouse:
+	case ErrorBudgetExhausted:
 		return true
-	case CreateSLORequestDatasourceTypePrometheus:
+	case ErrorBudgetRecovered:
 		return true
 	default:
 		return false
@@ -90,32 +96,14 @@ func (e ReadyResponseStatus) Valid() bool {
 	}
 }
 
-// Defines values for SLODatasourceType.
+// Defines values for SLORuntimeDatasourceType.
 const (
-	SLODatasourceTypeClickhouse SLODatasourceType = "clickhouse"
-	SLODatasourceTypePrometheus SLODatasourceType = "prometheus"
+	Clickhouse SLORuntimeDatasourceType = "clickhouse"
+	Prometheus SLORuntimeDatasourceType = "prometheus"
 )
 
-// Valid indicates whether the value is a known member of the SLODatasourceType enum.
-func (e SLODatasourceType) Valid() bool {
-	switch e {
-	case SLODatasourceTypeClickhouse:
-		return true
-	case SLODatasourceTypePrometheus:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for UpdateSLORequestDatasourceType.
-const (
-	Clickhouse UpdateSLORequestDatasourceType = "clickhouse"
-	Prometheus UpdateSLORequestDatasourceType = "prometheus"
-)
-
-// Valid indicates whether the value is a known member of the UpdateSLORequestDatasourceType enum.
-func (e UpdateSLORequestDatasourceType) Valid() bool {
+// Valid indicates whether the value is a known member of the SLORuntimeDatasourceType enum.
+func (e SLORuntimeDatasourceType) Valid() bool {
 	switch e {
 	case Clickhouse:
 		return true
@@ -124,6 +112,45 @@ func (e UpdateSLORequestDatasourceType) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// Defines values for SLORuntimeType.
+const (
+	ErrorRate SLORuntimeType = "error_rate"
+	Latency   SLORuntimeType = "latency"
+)
+
+// Valid indicates whether the value is a known member of the SLORuntimeType enum.
+func (e SLORuntimeType) Valid() bool {
+	switch e {
+	case ErrorRate:
+		return true
+	case Latency:
+		return true
+	default:
+		return false
+	}
+}
+
+// AlertState defines model for AlertState.
+type AlertState struct {
+	AlertKind           AlertStateAlertKind `json:"alertKind"`
+	GrafanaNamespaceUid string              `json:"grafanaNamespaceUid"`
+	GrafanaRuleGroup    string              `json:"grafanaRuleGroup"`
+	GrafanaRuleUid      string              `json:"grafanaRuleUid"`
+	LastAppliedSpecHash string              `json:"lastAppliedSpecHash"`
+	LastError           *string             `json:"lastError,omitempty"`
+	LastReconciledAt    *time.Time          `json:"lastReconciledAt,omitempty"`
+	SloId               openapi_types.UUID  `json:"sloId"`
+	Status              string              `json:"status"`
+}
+
+// AlertStateAlertKind defines model for AlertState.AlertKind.
+type AlertStateAlertKind string
+
+// AlertStateListResponse defines model for AlertStateListResponse.
+type AlertStateListResponse struct {
+	Items []AlertState `json:"items"`
 }
 
 // BurnEvent defines model for BurnEvent.
@@ -150,18 +177,9 @@ type BurnEventListResponse struct {
 
 // CreateSLORequest defines model for CreateSLORequest.
 type CreateSLORequest struct {
-	DatasourceType CreateSLORequestDatasourceType `json:"datasourceType"`
-	DatasourceUid  string                         `json:"datasourceUid"`
-	Description    *string                        `json:"description,omitempty"`
-	Name           string                         `json:"name"`
-	Openslo        string                         `json:"openslo"`
-	ServiceId      openapi_types.UUID             `json:"serviceId"`
-	Target         float32                        `json:"target"`
-	WindowMinutes  int                            `json:"windowMinutes"`
+	Openslo   string             `json:"openslo"`
+	ServiceId openapi_types.UUID `json:"serviceId"`
 }
-
-// CreateSLORequestDatasourceType defines model for CreateSLORequest.DatasourceType.
-type CreateSLORequestDatasourceType string
 
 // CreateServiceRequest defines model for CreateServiceRequest.
 type CreateServiceRequest struct {
@@ -213,28 +231,39 @@ type ReadyResponseStatus string
 
 // SLO defines model for SLO.
 type SLO struct {
-	Canonical      *map[string]interface{} `json:"canonical,omitempty"`
-	CreatedAt      time.Time               `json:"createdAt"`
-	DatasourceType SLODatasourceType       `json:"datasourceType"`
-	DatasourceUid  string                  `json:"datasourceUid"`
-	Description    *string                 `json:"description,omitempty"`
-	Id             openapi_types.UUID      `json:"id"`
-	Name           string                  `json:"name"`
-	Openslo        string                  `json:"openslo"`
-	ServiceId      openapi_types.UUID      `json:"serviceId"`
-	Target         float32                 `json:"target"`
-	UpdatedAt      time.Time               `json:"updatedAt"`
-	WindowMinutes  int                     `json:"windowMinutes"`
+	CreatedAt time.Time          `json:"createdAt"`
+	Id        openapi_types.UUID `json:"id"`
+	Openslo   string             `json:"openslo"`
+	Runtime   SLORuntime         `json:"runtime"`
+	ServiceId openapi_types.UUID `json:"serviceId"`
+	UpdatedAt time.Time          `json:"updatedAt"`
 }
-
-// SLODatasourceType defines model for SLO.DatasourceType.
-type SLODatasourceType string
 
 // SLOListResponse defines model for SLOListResponse.
 type SLOListResponse struct {
 	Items []SLO      `json:"items"`
 	Page  Pagination `json:"page"`
 }
+
+// SLORuntime defines model for SLORuntime.
+type SLORuntime struct {
+	DatasourceType SLORuntimeDatasourceType `json:"datasourceType"`
+	DatasourceUid  string                   `json:"datasourceUid"`
+	Description    *string                  `json:"description,omitempty"`
+	Name           string                   `json:"name"`
+	Route          string                   `json:"route"`
+	Target         float32                  `json:"target"`
+	Threshold      float32                  `json:"threshold"`
+	Type           SLORuntimeType           `json:"type"`
+	UserExperience *string                  `json:"userExperience,omitempty"`
+	WindowMinutes  int                      `json:"windowMinutes"`
+}
+
+// SLORuntimeDatasourceType defines model for SLORuntime.DatasourceType.
+type SLORuntimeDatasourceType string
+
+// SLORuntimeType defines model for SLORuntime.Type.
+type SLORuntimeType string
 
 // Service defines model for Service.
 type Service struct {
@@ -270,17 +299,8 @@ type TeamListResponse struct {
 
 // UpdateSLORequest defines model for UpdateSLORequest.
 type UpdateSLORequest struct {
-	DatasourceType UpdateSLORequestDatasourceType `json:"datasourceType"`
-	DatasourceUid  string                         `json:"datasourceUid"`
-	Description    *string                        `json:"description,omitempty"`
-	Name           string                         `json:"name"`
-	Openslo        string                         `json:"openslo"`
-	Target         float32                        `json:"target"`
-	WindowMinutes  int                            `json:"windowMinutes"`
+	Openslo string `json:"openslo"`
 }
-
-// UpdateSLORequestDatasourceType defines model for UpdateSLORequest.DatasourceType.
-type UpdateSLORequestDatasourceType string
 
 // UpdateServiceRequest defines model for UpdateServiceRequest.
 type UpdateServiceRequest struct {
@@ -550,6 +570,9 @@ type ServerInterface interface {
 	// (PUT /v1/slos/{sloId})
 	UpdateSLO(w http.ResponseWriter, r *http.Request, sloId SloId, params UpdateSLOParams)
 
+	// (GET /v1/slos/{sloId}/alert-status)
+	GetSLOAlertStatus(w http.ResponseWriter, r *http.Request, sloId SloId)
+
 	// (GET /v1/teams)
 	ListTeams(w http.ResponseWriter, r *http.Request, params ListTeamsParams)
 
@@ -632,6 +655,11 @@ func (_ Unimplemented) GetSLO(w http.ResponseWriter, r *http.Request, sloId SloI
 
 // (PUT /v1/slos/{sloId})
 func (_ Unimplemented) UpdateSLO(w http.ResponseWriter, r *http.Request, sloId SloId, params UpdateSLOParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /v1/slos/{sloId}/alert-status)
+func (_ Unimplemented) GetSLOAlertStatus(w http.ResponseWriter, r *http.Request, sloId SloId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1078,6 +1106,31 @@ func (siw *ServerInterfaceWrapper) UpdateSLO(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// GetSLOAlertStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetSLOAlertStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "sloId" -------------
+	var sloId SloId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sloId", chi.URLParam(r, "sloId"), &sloId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sloId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSLOAlertStatus(w, r, sloId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListTeams operation middleware
 func (siw *ServerInterfaceWrapper) ListTeams(w http.ResponseWriter, r *http.Request) {
 
@@ -1355,6 +1408,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/v1/slos/{sloId}", wrapper.UpdateSLO)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/slos/{sloId}/alert-status", wrapper.GetSLOAlertStatus)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/v1/teams", wrapper.ListTeams)
 	})
 	r.Group(func(r chi.Router) {
@@ -1376,36 +1432,40 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

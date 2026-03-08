@@ -33,7 +33,7 @@ Usage:
   crud-demo.sh service update <service_id> <name> <slug> <owner_team_id> [metadata_json]
   crud-demo.sh service delete <service_id>
 
-  crud-demo.sh slo create <service_id> <name> <target> <window_minutes> <datasource_uid> <route> <latency|error_rate> <threshold>
+  crud-demo.sh slo create <service_id> <name> <target> <window_minutes> <datasource_uid> <route> <latency|error_rate> <threshold> [description] [user_experience]
   crud-demo.sh slo list
   crud-demo.sh slo get <slo_id>
   crud-demo.sh slo update <slo_id> <name> <target> <window_minutes> <datasource_uid> <route> <latency|error_rate> <threshold>
@@ -78,22 +78,58 @@ openslo_yaml() {
   local name="$1"
   local route="$2"
   local target="$3"
-  local type="$4"
-  local threshold="$5"
+  local window="$4"
+  local ds_uid="$5"
+  local type="$6"
+  local threshold="$7"
+  local description="$8"
+  local user_experience="$9"
+  local object_name
+  object_name="$(echo "${name}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-' | sed -E 's/-+/-/g; s/^-+//; s/-+$//')"
+  if [[ -z "${object_name}" ]]; then
+    object_name="generated-slo"
+  fi
 
   cat <<EOF
 apiVersion: openslo/v1
+kind: Datasource
+metadata:
+  name: clickhouse-${ds_uid}
+spec:
+  type: clickhouse
+  connectionDetails:
+    uid: ${ds_uid}
+---
+apiVersion: openslo/v1
 kind: SLO
 metadata:
-  name: ${name}
+  name: ${object_name}
+  displayName: ${name}
+  annotations:
+    heatmap.local/userExperience: ${user_experience}
 spec:
+  description: ${description}
   service: generated-service
-  objective:
-    target: ${target}
+  budgetingMethod: Occurrences
+  objectives:
+    - target: ${target}
+  timeWindow:
+    - duration: ${window}m
+      isRolling: true
   indicator:
-    route: ${route}
-    type: ${type}
-    threshold: ${threshold}
+    metadata:
+      name: ${object_name}-indicator
+    spec:
+      thresholdMetric:
+        metricSource:
+          metricSourceRef: clickhouse-${ds_uid}
+          type: clickhouse
+          spec:
+            route: ${route}
+            type: ${type}
+            threshold: ${threshold}
+            datasourceUid: ${ds_uid}
+            datasourceType: clickhouse
 EOF
 }
 
@@ -106,32 +142,18 @@ slo_payload_create() {
   local route="$6"
   local type="$7"
   local threshold="$8"
+  local description="$9"
+  local user_experience="${10}"
 
-  local openslo canonical
-  openslo="$(openslo_yaml "${name}" "${route}" "${target}" "${type}" "${threshold}")"
-  canonical="$(jq -nc \
-    --arg route "${route}" \
-    --arg type "${type}" \
-    --argjson threshold "${threshold}" \
-    'if $type == "latency" then {route:$route, type:$type, thresholdMs:$threshold} else {route:$route, type:$type, thresholdRate:$threshold} end')"
+  local openslo
+  openslo="$(openslo_yaml "${name}" "${route}" "${target}" "${window}" "${ds_uid}" "${type}" "${threshold}" "${description}" "${user_experience}")"
 
   jq -nc \
     --arg serviceId "${service_id}" \
-    --arg name "${name}" \
-    --argjson target "${target}" \
-    --argjson windowMinutes "${window}" \
     --arg openslo "${openslo}" \
-    --arg datasourceUid "${ds_uid}" \
-    --argjson canonical "${canonical}" \
     '{
       serviceId: $serviceId,
-      name: $name,
-      target: $target,
-      windowMinutes: $windowMinutes,
-      openslo: $openslo,
-      datasourceType: "clickhouse",
-      datasourceUid: $datasourceUid,
-      canonical: $canonical
+      openslo: $openslo
     }'
 }
 
@@ -143,22 +165,15 @@ slo_payload_update() {
   local route="$5"
   local type="$6"
   local threshold="$7"
+  local description="$8"
+  local user_experience="$9"
   local openslo
-  openslo="$(openslo_yaml "${name}" "${route}" "${target}" "${type}" "${threshold}")"
+  openslo="$(openslo_yaml "${name}" "${route}" "${target}" "${window}" "${ds_uid}" "${type}" "${threshold}" "${description}" "${user_experience}")"
 
   jq -nc \
-    --arg name "${name}" \
-    --argjson target "${target}" \
-    --argjson windowMinutes "${window}" \
     --arg openslo "${openslo}" \
-    --arg datasourceUid "${ds_uid}" \
     '{
-      name: $name,
-      target: $target,
-      windowMinutes: $windowMinutes,
-      openslo: $openslo,
-      datasourceType: "clickhouse",
-      datasourceUid: $datasourceUid
+      openslo: $openslo
     }'
 }
 
@@ -203,13 +218,15 @@ slo_cmd() {
   case "${action}" in
     create)
       local service_id="$2" name="$3" target="$4" window="$5" ds_uid="$6" route="$7" type="$8" threshold="$9"
-      request POST "/v1/slos" "$(slo_payload_create "${service_id}" "${name}" "${target}" "${window}" "${ds_uid}" "${route}" "${type}" "${threshold}")"
+      local description="${10:-Protect ${name} user journey.}"
+      local user_experience="${11:-${name} user journey is successful}"
+      request POST "/v1/slos" "$(slo_payload_create "${service_id}" "${name}" "${target}" "${window}" "${ds_uid}" "${route}" "${type}" "${threshold}" "${description}" "${user_experience}")"
       ;;
     list) request GET "/v1/slos" ;;
     get) request GET "/v1/slos/$2" ;;
     update)
       local id="$2" name="$3" target="$4" window="$5" ds_uid="$6" route="$7" type="$8" threshold="$9"
-      request PUT "/v1/slos/${id}" "$(slo_payload_update "${name}" "${target}" "${window}" "${ds_uid}" "${route}" "${type}" "${threshold}")"
+      request PUT "/v1/slos/${id}" "$(slo_payload_update "${name}" "${target}" "${window}" "${ds_uid}" "${route}" "${type}" "${threshold}" "Protect ${name} user journey." "${name} user journey is successful")"
       ;;
     delete) request DELETE "/v1/slos/$2" ;;
     *) usage; exit 1 ;;
@@ -232,7 +249,7 @@ seed_examples() {
   local team_slug="platform-team-${seed_suffix}"
   local service_slug="api-gateway-${seed_suffix}"
 
-  local team service slo1 slo2 slo3 slo4
+  local team service slo1 slo2 slo3 slo4 slo5
   team="$(team_cmd create "platform-team-${seed_suffix}" "${team_slug}")" || {
     echo "team seed failed" >&2
     exit 1
@@ -255,20 +272,34 @@ seed_examples() {
     exit 1
   fi
 
-  slo1="$(slo_cmd create "${service_id}" "checkout-latency-${seed_suffix}" "0.99" "30" "clickhouse" "/cart/checkout" "latency" "500")" || {
+  slo1="$(slo_cmd create "${service_id}" "Checkout P99 Latency" "0.99" "30" "clickhouse" "/cart/checkout" "latency" "500" \
+    "Users can complete checkout quickly without waiting on page loads." \
+    "Checkout flow stays responsive from cart to confirmation.")" || {
     echo "slo1 seed failed" >&2
     exit 1
   }
-  slo2="$(slo_cmd create "${service_id}" "orders-error-rate-${seed_suffix}" "0.99" "30" "clickhouse" "/api/orders" "error_rate" "0.02")" || {
+  slo2="$(slo_cmd create "${service_id}" "Order Placement Success Rate" "0.99" "30" "clickhouse" "/api/orders" "error_rate" "0.02" \
+    "Users can place orders without server-side errors." \
+    "Order submission succeeds on first attempt for active shoppers.")" || {
     echo "slo2 seed failed" >&2
     exit 1
   }
-  slo3="$(slo_cmd create "${service_id}" "search-error-rate-${seed_suffix}" "0.99" "30" "clickhouse" "/api/search" "error_rate" "0.01")" || {
+  slo3="$(slo_cmd create "${service_id}" "Search Results Reliability" "0.99" "30" "clickhouse" "/api/search" "error_rate" "0.01" \
+    "Users can run catalog searches and receive results without backend failures." \
+    "Search requests return usable results during browsing sessions.")" || {
     echo "slo3 seed failed" >&2
     exit 1
   }
-  slo4="$(slo_cmd create "${service_id}" "auth-latency-${seed_suffix}" "0.995" "30" "clickhouse" "/api/auth" "latency" "300")" || {
+  slo4="$(slo_cmd create "${service_id}" "Sign-in P99 Latency" "0.995" "30" "clickhouse" "/api/auth" "latency" "300" \
+    "Users can sign in quickly and continue to the app without delay." \
+    "Authentication round-trip remains fast for interactive sign-in.")" || {
     echo "slo4 seed failed" >&2
+    exit 1
+  }
+  slo5="$(slo_cmd create "${service_id}" "Order Placement Success Rate (90% Baseline)" "0.90" "30" "clickhouse" "/api/orders" "error_rate" "0.02" \
+    "Baseline SLO for comparing alert sensitivity against stricter order success objectives." \
+    "Team can compare 90% vs 99% burn behavior for order placement reliability.")" || {
+    echo "slo5 seed failed" >&2
     exit 1
   }
 
@@ -280,11 +311,12 @@ seed_examples() {
     --arg slo2Id "$(echo "${slo2}" | jq -r '.id')" \
     --arg slo3Id "$(echo "${slo3}" | jq -r '.id')" \
     --arg slo4Id "$(echo "${slo4}" | jq -r '.id')" \
+    --arg slo5Id "$(echo "${slo5}" | jq -r '.id')" \
     '{
       teamId: $teamId,
       serviceId: $serviceId,
       seedSuffix: $seedSuffix,
-      sloIds: [$slo1Id, $slo2Id, $slo3Id, $slo4Id]
+      sloIds: [$slo1Id, $slo2Id, $slo3Id, $slo4Id, $slo5Id]
     }' > "${STATE_FILE}"
 
   echo "Seed complete."

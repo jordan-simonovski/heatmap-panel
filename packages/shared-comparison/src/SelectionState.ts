@@ -1,6 +1,6 @@
 import { SceneObjectBase, SceneObjectState, sceneGraph } from '@grafana/scenes';
 import { getAppEvents } from '@grafana/runtime';
-import { HeatmapSelection, HeatmapSelectionEvent } from './types';
+import { HeatmapSelection, HeatmapSelectionClearedEvent, HeatmapSelectionEvent } from './types';
 
 export interface SelectionStateState extends SceneObjectState {
   selection: HeatmapSelection | null;
@@ -17,12 +17,16 @@ export class SelectionState extends SceneObjectBase<SelectionStateState> {
   }
 
   private _onActivate() {
-    const sub = getAppEvents().subscribe(HeatmapSelectionEvent, (event) => {
+    const selectionSub = getAppEvents().subscribe(HeatmapSelectionEvent, (event) => {
       this.setState({ selection: event.payload });
+    });
+    const clearSub = getAppEvents().subscribe(HeatmapSelectionClearedEvent, () => {
+      this.clearSelection();
     });
 
     return () => {
-      sub.unsubscribe();
+      selectionSub.unsubscribe();
+      clearSub.unsubscribe();
     };
   }
 

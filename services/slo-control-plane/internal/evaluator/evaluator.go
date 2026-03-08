@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
-	"regexp"
 	"strings"
 	"time"
 
@@ -170,6 +169,14 @@ func (e *Evaluator) persistEvaluation(
 	if !hasPrev {
 		next.LastTransitionAt = sql.NullTime{}
 		next.LastContinuedAt = sql.NullTime{}
+		next.BreachTransitionAt = sql.NullTime{}
+	}
+
+	exhaustionThreshold := float64(slo.Target) - (1.0 - float64(slo.Target))
+	isBreached := compliance <= exhaustionThreshold
+	next.IsBreached = isBreached
+	if hasPrev {
+		next.BreachTransitionAt = prev.BreachTransitionAt
 	}
 
 	if action.EmitEvent {
@@ -189,6 +196,32 @@ func (e *Evaluator) persistEvaluation(
 			"threshold":            burnThreshold,
 			"source":               "slo-evaluator:" + string(severity),
 			"severity":             string(severity),
+			"etaExhaustionSeconds": etaSeconds,
+			"evaluatedAt":          now.Format(time.RFC3339),
+		}, idempotencyKey)
+		if err != nil {
+			return err
+		}
+	}
+	wasBreached := hasPrev && prev.IsBreached
+	if !hasPrev {
+		wasBreached = false
+	}
+	if wasBreached != isBreached {
+		next.BreachTransitionAt = sql.NullTime{Valid: true, Time: now}
+		eventType := "error_budget_recovered"
+		if isBreached {
+			eventType = "error_budget_exhausted"
+		}
+		idempotencyKey := buildIdempotencyKey(eventType, severity, slo.ID, now)
+		err = e.store.EnqueueOutbox(ctx, tx, "slo", slo.ID, eventType, map[string]any{
+			"serviceId":            slo.ServiceID.String(),
+			"sloId":                slo.ID.String(),
+			"eventType":            eventType,
+			"value":                burnRate,
+			"threshold":            burnThreshold,
+			"source":               "slo-evaluator:breach",
+			"severity":             "critical",
 			"etaExhaustionSeconds": etaSeconds,
 			"evaluatedAt":          now.Format(time.RFC3339),
 		}, idempotencyKey)
@@ -223,27 +256,14 @@ func parseSLIDefinition(slo store.SLO) (sliDefinition, bool) {
 		WindowMinutes: slo.WindowMinutes,
 		Target:        float64(slo.Target),
 	}
-
-	if route, ok := slo.Canonical["route"].(string); ok && route != "" {
-		def.Route = route
-	} else if route := parseOpenSLOField(slo.OpenSLO, "route"); route != "" {
-		def.Route = route
+	def.Route = strings.TrimSpace(stringFromAny(slo.Canonical["route"]))
+	def.Type = strings.TrimSpace(stringFromAny(slo.Canonical["type"]))
+	def.Threshold = numberFromAny(slo.Canonical["threshold"])
+	if w := int(numberFromAny(slo.Canonical["windowMinutes"])); w > 0 {
+		def.WindowMinutes = w
 	}
-	if t, ok := slo.Canonical["type"].(string); ok {
-		def.Type = t
-	} else if t := parseOpenSLOField(slo.OpenSLO, "type"); t != "" {
-		def.Type = t
-	}
-	if def.Type == "latency" {
-		def.Threshold = numberFromAny(slo.Canonical["thresholdMs"])
-		if def.Threshold == 0 {
-			def.Threshold = parseOpenSLONumber(slo.OpenSLO, "threshold")
-		}
-	} else {
-		def.Threshold = numberFromAny(slo.Canonical["thresholdRate"])
-		if def.Threshold == 0 {
-			def.Threshold = parseOpenSLONumber(slo.OpenSLO, "threshold")
-		}
+	if t := numberFromAny(slo.Canonical["target"]); t > 0 {
+		def.Target = t
 	}
 
 	if def.Route == "" || def.Type == "" || def.Threshold <= 0 {
@@ -340,25 +360,6 @@ func timeToExhaustionSeconds(burnRate float64, windowMinutes int) int {
 	return int(math.Ceil(seconds))
 }
 
-func parseOpenSLOField(openslo string, field string) string {
-	re := regexp.MustCompile(fmt.Sprintf(`(?m)^\s*%s:\s*(.+)\s*$`, regexp.QuoteMeta(field)))
-	m := re.FindStringSubmatch(openslo)
-	if len(m) < 2 {
-		return ""
-	}
-	return strings.TrimSpace(m[1])
-}
-
-func parseOpenSLONumber(openslo string, field string) float64 {
-	raw := parseOpenSLOField(openslo, field)
-	if raw == "" {
-		return 0
-	}
-	var v float64
-	_, _ = fmt.Sscanf(raw, "%f", &v)
-	return v
-}
-
 func numberFromAny(v any) float64 {
 	switch n := v.(type) {
 	case float64:
@@ -369,5 +370,14 @@ func numberFromAny(v any) float64 {
 		return float64(n)
 	default:
 		return 0
+	}
+}
+
+func stringFromAny(v any) string {
+	switch s := v.(type) {
+	case string:
+		return s
+	default:
+		return ""
 	}
 }

@@ -3,7 +3,7 @@ import { locationService } from '@grafana/runtime';
 import { ROUTES } from '../../constants';
 import { prefixRoute } from '../../utils/utils.routing';
 import { traceScene } from './traceScene';
-import { bubblesPage } from '../Bubbles/bubblesPage';
+import { explorerPage } from '../Bubbles/bubblesPage';
 
 function getTraceIdFromPathname(pathname: string): string {
   const parts = pathname.split('/').filter(Boolean);
@@ -15,7 +15,7 @@ export const tracePage = new SceneAppPage({
   subTitle: 'Inspect representative outlier trace details to validate root cause.',
   url: prefixRoute(ROUTES.Trace),
   routePath: `${ROUTES.Trace}/:traceId`,
-  getParentPage: () => bubblesPage,
+  getParentPage: () => explorerPage,
   getScene: () => {
     const pathname = locationService.getLocation().pathname ?? window.location.pathname;
     return traceScene(getTraceIdFromPathname(pathname));

@@ -31,3 +31,13 @@ export function getSeverityBadgeColor(severity: BurnSeverity): BadgeColor {
   }
   return 'blue';
 }
+
+export function getSeverityWeight(severity: BurnSeverity): number {
+  if (severity === 'fast') {
+    return 3;
+  }
+  if (severity === 'slow') {
+    return 2;
+  }
+  return 1;
+}

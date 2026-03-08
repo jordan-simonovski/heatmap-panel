@@ -8,7 +8,7 @@ This repository now includes a standalone self-hostable control-plane service:
 
 - Teams
 - Services (single owning team)
-- SLO definitions (OpenSLO YAML payloads + canonical JSON)
+- SLO definitions (OpenSLO YAML payloads + runtime projection)
 - Outbox events for burn delivery
 
 ## Burn events flow
@@ -29,6 +29,50 @@ This repository now includes a standalone self-hostable control-plane service:
 - Uses generated OpenAPI TypeScript types.
 - Loads teams/services/SLOs/burn events from backend.
 - Exposes create forms in-app and refreshes scene pages from API data.
+
+## OpenSLO conventions (UX-first)
+
+For every SLO, use a human-readable name and description that describes the user journey being protected.
+
+Recommended YAML shape:
+
+```yaml
+apiVersion: openslo/v1
+kind: SLO
+metadata:
+  name: checkout-success
+  displayName: Checkout Success
+  annotations:
+    heatmap.local/userExperience: Users can check out successfully.
+spec:
+  description: Users can complete checkout without errors.
+  service: api-gateway
+  budgetingMethod: Occurrences
+  objectives:
+    - target: 0.99
+  timeWindow:
+    - duration: 30m
+      isRolling: true
+  indicator:
+    metadata:
+      name: checkout-success-indicator
+    spec:
+      thresholdMetric:
+        metricSource:
+          type: clickhouse
+          spec:
+            route: /cart/checkout
+            type: error_rate # or latency
+            threshold: 0.01
+            datasourceUid: clickhouse
+            datasourceType: clickhouse
+```
+
+Storage behavior:
+
+- OpenSLO is the only write source; API no longer accepts duplicated top-level SLO fields.
+- Runtime metadata is projected from OpenSLO (`name`, `target`, `window`, route/type/threshold, datasource fields, UX annotation) for evaluator/reconciler/UI reads.
+- Parsed OpenSLO objects are persisted in `slo_openslo_objects` for audit and reconciliation.
 
 ## Contract-first workflow
 

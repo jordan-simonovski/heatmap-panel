@@ -20,3 +20,7 @@ export interface TimeseriesSelection {
 export class TimeseriesSelectionEvent extends BusEventWithPayload<TimeseriesSelection> {
   static type = 'heatmap-bubbles-selection';
 }
+
+export class TimeseriesSelectionClearedEvent extends BusEventWithPayload<null> {
+  static type = 'heatmap-bubbles-selection-clear';
+}

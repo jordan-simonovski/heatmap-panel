@@ -11,11 +11,13 @@ import (
 type BurnState struct {
 	SLOID             uuid.UUID
 	IsBurning         bool
+	IsBreached        bool
 	CurrentSeverity   string
 	CurrentCompliance float32
 	CurrentBurnRate   float32
 	ETAExhaustionSec  sql.NullInt32
 	LastTransitionAt  sql.NullTime
+	BreachTransitionAt sql.NullTime
 	LastContinuedAt   sql.NullTime
 	LastEvaluatedAt   time.Time
 }
@@ -58,12 +60,12 @@ func (s *Store) GetBurnStateForUpdate(ctx context.Context, tx *sql.Tx, sloID uui
 	st.SLOID = sloID
 
 	err := tx.QueryRowContext(ctx, `
-		SELECT slo_id, is_burning, current_severity, current_compliance, current_burn_rate, eta_exhaustion_seconds, last_transition_at, last_continued_at, last_evaluated_at
+		SELECT slo_id, is_burning, is_breached, current_severity, current_compliance, current_burn_rate, eta_exhaustion_seconds, last_transition_at, breach_transition_at, last_continued_at, last_evaluated_at
 		FROM slo_burn_state
 		WHERE slo_id = $1
 		FOR UPDATE
 	`, sloID).Scan(
-		&st.SLOID, &st.IsBurning, &st.CurrentSeverity, &st.CurrentCompliance, &st.CurrentBurnRate, &st.ETAExhaustionSec, &st.LastTransitionAt, &st.LastContinuedAt, &st.LastEvaluatedAt,
+		&st.SLOID, &st.IsBurning, &st.IsBreached, &st.CurrentSeverity, &st.CurrentCompliance, &st.CurrentBurnRate, &st.ETAExhaustionSec, &st.LastTransitionAt, &st.BreachTransitionAt, &st.LastContinuedAt, &st.LastEvaluatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return BurnState{}, false, nil
@@ -90,18 +92,20 @@ func (s *Store) UpsertBurnStateTx(ctx context.Context, tx *sql.Tx, st BurnState)
 
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO slo_burn_state (
-			slo_id, is_burning, current_severity, current_compliance, current_burn_rate, eta_exhaustion_seconds, last_transition_at, last_continued_at, last_evaluated_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now())
+			slo_id, is_burning, is_breached, current_severity, current_compliance, current_burn_rate, eta_exhaustion_seconds, last_transition_at, breach_transition_at, last_continued_at, last_evaluated_at, updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())
 		ON CONFLICT (slo_id) DO UPDATE
 		SET is_burning = EXCLUDED.is_burning,
+		    is_breached = EXCLUDED.is_breached,
 		    current_severity = EXCLUDED.current_severity,
 		    current_compliance = EXCLUDED.current_compliance,
 		    current_burn_rate = EXCLUDED.current_burn_rate,
 		    eta_exhaustion_seconds = EXCLUDED.eta_exhaustion_seconds,
 		    last_transition_at = EXCLUDED.last_transition_at,
+		    breach_transition_at = EXCLUDED.breach_transition_at,
 		    last_continued_at = EXCLUDED.last_continued_at,
 		    last_evaluated_at = EXCLUDED.last_evaluated_at,
 		    updated_at = now()
-	`, st.SLOID, st.IsBurning, st.CurrentSeverity, st.CurrentCompliance, st.CurrentBurnRate, etaExhaustion, lastTransition, lastContinued, st.LastEvaluatedAt)
+	`, st.SLOID, st.IsBurning, st.IsBreached, st.CurrentSeverity, st.CurrentCompliance, st.CurrentBurnRate, etaExhaustion, lastTransition, nullableTime(st.BreachTransitionAt), lastContinued, st.LastEvaluatedAt)
 	return err
 }
