@@ -18,7 +18,7 @@ export const routeFor = {
   slo: (sloId: string) => `slo/${sloId}`,
 };
 
-export const HEATMAP_APP_ID = 'heatmap-bubbles-app';
+export const HEATMAP_APP_ID = 'jordo-heatmap-bubbles-app';
 
 export const CLICKHOUSE_DS = {
   uid: 'clickhouse',

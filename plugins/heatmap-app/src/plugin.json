@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
   "type": "app",
   "name": "Heatmap Bubbles App",
-  "id": "heatmap-bubbles-app",
+  "id": "jordo-heatmap-bubbles-app",
   "info": {
     "keywords": ["app", "heatmap", "bubbles", "traces", "latency", "comparison"],
     "description": "Bubbles trace analysis app with heatmap selection and attribute comparison",

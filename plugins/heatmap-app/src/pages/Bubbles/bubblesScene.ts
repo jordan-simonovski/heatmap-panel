@@ -186,7 +186,7 @@ export function bubblesScene(view: WorkbenchView = 'explorer') {
 
   const heatmapVizPanel = new VizPanel({
     title: PANEL_TITLES[currentMode()] ?? PANEL_TITLES.latency,
-    pluginId: 'heatmap-bubbles-panel',
+    pluginId: 'jordo-heatmap-bubbles-panel',
     options: {
       yAxisScale: 'log',
       colorScheme: 'blues',

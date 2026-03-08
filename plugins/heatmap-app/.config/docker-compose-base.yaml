@@ -1,7 +1,7 @@
 services:
   grafana:
     user: root
-    container_name: 'heatmapbubbles-heatmapapp-app'
+    container_name: 'jordo-heatmap-bubbles-app'
 
     build:
       context: .
@@ -13,13 +13,13 @@ services:
     ports:
       - 3000:3000/tcp
     volumes:
-      - ../dist:/var/lib/grafana/plugins/heatmapbubbles-heatmapapp-app
+      - ../dist:/var/lib/grafana/plugins/jordo-heatmap-bubbles-app
       - ../provisioning:/etc/grafana/provisioning
-      - ..:/root/heatmapbubbles-heatmapapp-app
+      - ..:/root/jordo-heatmap-bubbles-app
 
     environment:
       NODE_ENV: development
-      GF_LOG_FILTERS: plugin.heatmapbubbles-heatmapapp-app:debug
+      GF_LOG_FILTERS: plugin.jordo-heatmap-bubbles-app:debug
       GF_LOG_LEVEL: debug
       GF_DATAPROXY_LOGGING: 1
-      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: heatmapbubbles-heatmapapp-app
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: jordo-heatmap-bubbles-app

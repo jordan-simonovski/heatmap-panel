@@ -51,7 +51,7 @@
         }
       ],
       "title": "Sample Panel Title",
-      "type": "heatmapbubbles-heatmap-panel"
+      "type": "jordo-heatmap-bubbles-panel"
     },
     {
       "datasource": {
@@ -82,7 +82,7 @@
         }
       ],
       "title": "Sample Panel Title",
-      "type": "heatmapbubbles-heatmap-panel"
+      "type": "jordo-heatmap-bubbles-panel"
     }
   ],
   "refresh": "",
