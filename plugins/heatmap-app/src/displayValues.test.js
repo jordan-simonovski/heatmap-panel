@@ -1,7 +1,6 @@
-import { ComparisonResult, ValueDistribution } from '../../../packages/shared-comparison/src/comparison';
 import { getTopDisplayValues } from '../../../packages/shared-comparison/src/displayValues';
 
-function dist(value: string, count: number, total: number): ValueDistribution {
+function dist(value, count, total) {
   return {
     value,
     count,
@@ -13,7 +12,7 @@ describe('getTopDisplayValues', () => {
   it('pins highestDiffValue to the visible list when it is not in top-N by count', () => {
     const baseline = Array.from({ length: 11 }, (_, i) => dist(`b-${i}`, 100 - i, 1000));
     const selection = [dist('s-hot', 1, 1)];
-    const result: ComparisonResult = {
+    const result = {
       attribute: 'user.id',
       baseline,
       selection,

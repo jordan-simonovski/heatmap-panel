@@ -4,6 +4,7 @@ export const PLUGIN_BASE_URL = `/a/${pluginJson.id}`;
 
 export enum ROUTES {
   Bubbles = 'bubbles',
+  Trace = 'bubbles/trace',
 }
 
 export const CLICKHOUSE_DS = {

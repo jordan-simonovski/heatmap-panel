@@ -13,9 +13,13 @@ import {
   VariableValueSelectors,
   VizPanel,
 } from '@grafana/scenes';
+import { locationService } from '@grafana/runtime';
 import { CLICKHOUSE_DS } from '../../constants';
+import { ROUTES } from '../../constants';
+import { prefixRoute } from '../../utils/utils.routing';
 import { SelectionState } from '../../components/Bubbles/SelectionState';
 import { AttributeComparisonPanel } from '../../components/Bubbles/AttributeComparisonPanel';
+import { RepresentativeTracesPanel } from '../../components/Bubbles/RepresentativeTracesPanel';
 import { ViewModeControl } from '../../components/Bubbles/ViewModeControl';
 
 /**
@@ -120,14 +124,24 @@ export function bubblesScene() {
   const comparisonPanel = new AttributeComparisonPanel({
     datasource: CLICKHOUSE_DS,
   });
+  const representativeTracesPanel = new RepresentativeTracesPanel({
+    datasource: CLICKHOUSE_DS,
+    maxTraces: 10,
+    onTraceSelect: (traceId) => {
+      locationService.push(prefixRoute(`${ROUTES.Trace}/${encodeURIComponent(traceId)}`));
+    },
+  });
 
   comparisonPanel.setAdHocVariable(adHocFilters);
   comparisonPanel.setServiceVariable(serviceVar);
+  representativeTracesPanel.setAdHocVariable(adHocFilters);
+  representativeTracesPanel.setServiceVariable(serviceVar);
 
   selectionState.addActivationHandler(() => {
     const sub = selectionState.subscribeToState((newState, prevState) => {
       if (newState.selection !== prevState.selection) {
         comparisonPanel.setSelection(newState.selection);
+        representativeTracesPanel.setSelection(newState.selection);
       }
     });
     return () => sub.unsubscribe();
@@ -140,6 +154,9 @@ export function bubblesScene() {
         if (comparisonPanel.state.selection) {
           comparisonPanel.setSelection(comparisonPanel.state.selection);
         }
+        if (representativeTracesPanel.state.selection) {
+          representativeTracesPanel.setSelection(representativeTracesPanel.state.selection);
+        }
       }
     });
     return () => sub.unsubscribe();
@@ -151,6 +168,9 @@ export function bubblesScene() {
         refreshHeatmapQuery();
         if (comparisonPanel.state.selection) {
           comparisonPanel.setSelection(comparisonPanel.state.selection);
+        }
+        if (representativeTracesPanel.state.selection) {
+          representativeTracesPanel.setSelection(representativeTracesPanel.state.selection);
         }
       }
     });
@@ -178,6 +198,7 @@ export function bubblesScene() {
   }
 
   comparisonPanel.setModeFilter(modeFilterSql(currentMode()));
+  representativeTracesPanel.setModeFilter(modeFilterSql(currentMode()));
 
   viewMode.addActivationHandler(() => {
     const sub = viewMode.subscribeToState((newState, prevState) => {
@@ -189,8 +210,12 @@ export function bubblesScene() {
           options: { ...opts, colorMode: newState.mode === 'errors' ? 'errorRate' : 'count' },
         });
         comparisonPanel.setModeFilter(modeFilterSql(newState.mode));
+        representativeTracesPanel.setModeFilter(modeFilterSql(newState.mode));
         if (comparisonPanel.state.selection) {
           comparisonPanel.setSelection(comparisonPanel.state.selection);
+        }
+        if (representativeTracesPanel.state.selection) {
+          representativeTracesPanel.setSelection(representativeTracesPanel.state.selection);
         }
       }
     });
@@ -209,6 +234,10 @@ export function bubblesScene() {
         new SceneFlexItem({
           height: 350,
           body: heatmapVizPanel,
+        }),
+        new SceneFlexItem({
+          minHeight: 170,
+          body: representativeTracesPanel,
         }),
         new SceneFlexItem({
           minHeight: 400,

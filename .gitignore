@@ -5,3 +5,4 @@ plugins/*/node_modules/
 .cache/
 *.log
 trace-generator/bin
+.worktrees/

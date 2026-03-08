@@ -6,3 +6,7 @@ export { SelectionState } from './SelectionState';
 export type { SelectionStateState } from './SelectionState';
 export { AttributeComparisonPanel } from './AttributeComparisonPanel';
 export type { ComparisonAttribute, ComparisonPanelConfig } from './AttributeComparisonPanel';
+export { RepresentativeTracesPanel } from './representativeTraces';
+export type { RepresentativeTracesConfig } from './representativeTraces';
+export { rankRepresentativeTraces } from './representativeTraceRanking';
+export type { RepresentativeTraceRow } from './representativeTraceRanking';

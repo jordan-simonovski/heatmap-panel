@@ -1,6 +1,6 @@
-import { computeComparison, ValueDistribution } from '../../../packages/shared-comparison/src/comparison';
+import { computeComparison } from '../../../packages/shared-comparison/src/comparison';
 
-function dist(value: string, count: number, total: number): ValueDistribution {
+function dist(value, count, total) {
   return {
     value,
     count,
@@ -11,7 +11,7 @@ function dist(value: string, count: number, total: number): ValueDistribution {
 describe('computeComparison', () => {
   it('returns no signal when selection has no values for the attribute', () => {
     const baseline = [dist('200', 90, 100), dist('500', 10, 100)];
-    const selection: ValueDistribution[] = [];
+    const selection = [];
 
     const result = computeComparison('StatusCode', baseline, selection);
 

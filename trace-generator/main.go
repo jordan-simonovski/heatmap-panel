@@ -79,6 +79,16 @@ func gaussianDuration(mean, stddev float64) time.Duration {
 	return time.Duration(d * float64(time.Millisecond))
 }
 
+func markSpanError(span trace.Span, exceptionType, message string) {
+	span.SetStatus(codes.Error, message)
+	span.AddEvent("exception",
+		trace.WithAttributes(
+			attribute.String("exception.type", exceptionType),
+			attribute.String("exception.message", message),
+		),
+	)
+}
+
 // ── Attribute pools ─────────────────────────────────────────────────
 
 var (
@@ -427,7 +437,7 @@ func emitIOSOrderErrors(ctx context.Context, st *serviceTracers, ts time.Time, a
 			attribute.Int("http.status_code", 500),
 		)...),
 	)
-	rootSpan.SetStatus(codes.Error, "malformed request body")
+	markSpanError(rootSpan, "ValidationError", "malformed request body")
 
 	svcStart := ts.Add(jitter())
 	_, svcSpan := st.tracer("order-service").Start(rootCtx, "order-service.handle",
@@ -435,7 +445,7 @@ func emitIOSOrderErrors(ctx context.Context, st *serviceTracers, ts time.Time, a
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(svcAttrs("order-service", a)...),
 	)
-	svcSpan.SetStatus(codes.Error, "malformed request body")
+	markSpanError(svcSpan, "ValidationError", "malformed request body")
 	svcSpan.End(trace.WithTimestamp(svcStart.Add(svcDur)))
 	rootSpan.End(trace.WithTimestamp(ts.Add(rootDur)))
 }
@@ -511,7 +521,7 @@ func emitInitechSearch(ctx context.Context, st *serviceTracers, ts time.Time, a 
 			attribute.Int("http.status_code", 500),
 		)...),
 	)
-	rootSpan.SetStatus(codes.Error, "upstream timeout")
+	markSpanError(rootSpan, "TimeoutError", "upstream timeout")
 
 	svcStart := ts.Add(jitter())
 	svcCtx, svcSpan := st.tracer("search-service").Start(rootCtx, "search-service.handle",
@@ -519,7 +529,7 @@ func emitInitechSearch(ctx context.Context, st *serviceTracers, ts time.Time, a 
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(svcAttrs("search-service", a)...),
 	)
-	svcSpan.SetStatus(codes.Error, "elasticsearch timeout")
+	markSpanError(svcSpan, "TimeoutError", "elasticsearch timeout")
 
 	// Elasticsearch timeout
 	esStart := svcStart.Add(jitter())
@@ -534,7 +544,7 @@ func emitInitechSearch(ctx context.Context, st *serviceTracers, ts time.Time, a 
 			attribute.String("host.region", a.region),
 		),
 	)
-	esSpan.SetStatus(codes.Error, "read tcp: i/o timeout")
+	markSpanError(esSpan, "IOException", "read tcp: i/o timeout")
 	esSpan.End(trace.WithTimestamp(esStart.Add(esDur)))
 
 	svcSpan.End(trace.WithTimestamp(svcStart.Add(svcDur)))
@@ -564,7 +574,7 @@ func emitAuthMemoryLeak(ctx context.Context, st *serviceTracers, ts time.Time, a
 		)...),
 	)
 	if errMsg != "" {
-		rootSpan.SetStatus(codes.Error, errMsg)
+		markSpanError(rootSpan, "ServiceUnavailableError", errMsg)
 	} else {
 		rootSpan.SetStatus(codes.Ok, "")
 	}
@@ -576,7 +586,7 @@ func emitAuthMemoryLeak(ctx context.Context, st *serviceTracers, ts time.Time, a
 		trace.WithAttributes(svcAttrs("user-service", a)...),
 	)
 	if errMsg != "" {
-		svcSpan.SetStatus(codes.Error, errMsg)
+		markSpanError(svcSpan, "ServiceUnavailableError", errMsg)
 	}
 
 	// Slow redis from GC backpressure
@@ -612,7 +622,7 @@ func emitPaymentTimeout(ctx context.Context, st *serviceTracers, ts time.Time, a
 			attribute.Int("http.status_code", 504),
 		)...),
 	)
-	rootSpan.SetStatus(codes.Error, "gateway timeout")
+	markSpanError(rootSpan, "TimeoutError", "gateway timeout")
 
 	svcStart := ts.Add(jitter())
 	svcCtx, svcSpan := st.tracer("order-service").Start(rootCtx, "order-service.handle",
@@ -620,7 +630,7 @@ func emitPaymentTimeout(ctx context.Context, st *serviceTracers, ts time.Time, a
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(svcAttrs("order-service", a)...),
 	)
-	svcSpan.SetStatus(codes.Error, "payment service timeout")
+	markSpanError(svcSpan, "TimeoutError", "payment service timeout")
 
 	// Quick DB write succeeds
 	dbStart := svcStart.Add(jitter())
@@ -648,7 +658,7 @@ func emitPaymentTimeout(ctx context.Context, st *serviceTracers, ts time.Time, a
 			attribute.String("host.region", a.region),
 		),
 	)
-	paySpan.SetStatus(codes.Error, "context deadline exceeded")
+	markSpanError(paySpan, "TimeoutError", "context deadline exceeded")
 
 	_, extSpan := st.tracer("payment-service").Start(payCtx, "external.payment.process",
 		trace.WithTimestamp(payStart.Add(jitter())),
@@ -658,7 +668,7 @@ func emitPaymentTimeout(ctx context.Context, st *serviceTracers, ts time.Time, a
 			attribute.String("host.region", a.region),
 		),
 	)
-	extSpan.SetStatus(codes.Error, "read tcp: i/o timeout")
+	markSpanError(extSpan, "IOException", "read tcp: i/o timeout")
 	extSpan.End(trace.WithTimestamp(payStart.Add(payDur)))
 	paySpan.End(trace.WithTimestamp(payStart.Add(payDur)))
 
@@ -709,7 +719,7 @@ func emitUmbrellaCompliance(ctx context.Context, st *serviceTracers, ts time.Tim
 	dbSys := serviceToDBSystem(svc)
 	emitNormalLeafSpan(st, svcCtx, svc, dbSys, a, compStart.Add(overhead).Add(jitter()))
 
-	svcSpan.End(trace.WithTimestamp(svcStart.Add(baseDur+overhead)))
+	svcSpan.End(trace.WithTimestamp(svcStart.Add(baseDur + overhead)))
 	rootSpan.End(trace.WithTimestamp(ts.Add(rootDur)))
 }
 
