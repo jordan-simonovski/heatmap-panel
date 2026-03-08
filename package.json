@@ -4,7 +4,16 @@
   "scripts": {
     "dev": "npm run dev --workspace=plugins/heatmap-panel & npm run dev --workspace=plugins/timeseries-selection-panel & npm run dev --workspace=plugins/heatmap-app & npm run dev --workspace=plugins/slo-app",
     "build": "npm run build --workspace=plugins/heatmap-panel && npm run build --workspace=plugins/timeseries-selection-panel && npm run build --workspace=plugins/heatmap-app && npm run build --workspace=plugins/slo-app",
-    "typecheck": "npm run typecheck --workspace=plugins/heatmap-panel && npm run typecheck --workspace=plugins/timeseries-selection-panel && npm run typecheck --workspace=plugins/heatmap-app && npm run typecheck --workspace=plugins/slo-app"
+    "typecheck": "npm run typecheck --workspace=plugins/heatmap-panel && npm run typecheck --workspace=plugins/timeseries-selection-panel && npm run typecheck --workspace=plugins/heatmap-app && npm run typecheck --workspace=plugins/slo-app",
+    "lint": "npm run lint --workspace=plugins/heatmap-panel && npm run lint --workspace=plugins/timeseries-selection-panel && npm run lint --workspace=plugins/heatmap-app && npm run lint --workspace=plugins/slo-app",
+    "test:ci": "npm run test:ci --workspace=plugins/heatmap-panel && npm run test:ci --workspace=plugins/timeseries-selection-panel && npm run test:ci --workspace=plugins/heatmap-app && npm run test:ci --workspace=plugins/slo-app",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "publish-plugins": "bash scripts/publish-plugins.sh"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "^0.6.0",
+    "@changesets/cli": "^2.30.0"
   },
   "workspaces": [
     "packages/*",
