@@ -12,6 +12,24 @@ PLUGINS=(
   "slo-app"
 )
 
+write_md5_file() {
+  local input_file="$1"
+  local output_file="$2"
+
+  if command -v md5sum >/dev/null 2>&1; then
+    md5sum "$input_file" | awk '{print $1}' >"$output_file"
+    return
+  fi
+
+  if command -v md5 >/dev/null 2>&1; then
+    md5 -q "$input_file" >"$output_file"
+    return
+  fi
+
+  echo "Error: neither md5sum nor md5 is available to generate checksums." >&2
+  exit 1
+}
+
 # Validate required environment variables
 if [[ -z "${GRAFANA_ACCESS_POLICY_TOKEN:-}" ]]; then
   echo "Error: GRAFANA_ACCESS_POLICY_TOKEN is not set. Cannot sign Grafana plugins." >&2
@@ -81,16 +99,23 @@ for PLUGIN in "${PLUGINS[@]}"; do
     NOTES="Release ${PLUGIN_ID} v${VERSION}"
   fi
 
-  # Create the GitHub release and attach the zip
+  ZIP_PATH="$PLUGIN_DIR/${PLUGIN_ID}-${VERSION}.zip"
+  MD5_PATH="$PLUGIN_DIR/${PLUGIN_ID}-${VERSION}.zip.md5"
+
+  echo "    Generating MD5 checksum ${PLUGIN_ID}-${VERSION}.zip.md5..."
+  write_md5_file "$ZIP_PATH" "$MD5_PATH"
+
+  # Create the GitHub release and attach the zip + md5
   echo "    Creating GitHub release $TAG..."
   gh release create "$TAG" \
     --repo "$GITHUB_REPOSITORY" \
     --title "${PLUGIN_ID} v${VERSION}" \
     --notes "$NOTES" \
-    "$PLUGIN_DIR/${PLUGIN_ID}-${VERSION}.zip"
+    "$ZIP_PATH" \
+    "$MD5_PATH"
 
-  # Clean up the zip from the plugin directory
-  rm -f "$PLUGIN_DIR/${PLUGIN_ID}-${VERSION}.zip"
+  # Clean up release assets from the plugin directory
+  rm -f "$ZIP_PATH" "$MD5_PATH"
 
   echo "    Released $TAG"
 done
