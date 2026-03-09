@@ -4,6 +4,16 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      publish_mode:
+        description: 'Release mode'
+        required: true
+        default: 'publish-now'
+        type: choice
+        options:
+          - publish-now
+          - version-only
 
 concurrency:
   group: release-${{ github.ref }}
@@ -40,18 +50,22 @@ jobs:
               "Plugin signing will fail if a publish is triggered." >&2
           fi
 
-      - name: Create Release PR or Publish
+      - name: Publish plugin artifacts now
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_mode == 'publish-now' }}
+        run: npm run publish-plugins
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
+      - name: Create Version PR (Changesets only)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_mode == 'version-only' }}
         id: changesets
         uses: changesets/action@v1
         with:
           # When pending changesets exist: bump versions and update changelogs.
           version: npm run version-packages
-          # When the Version PR is merged (no more pending changesets): build,
-          # sign, and publish every plugin as a GitHub release.
-          publish: npm run publish-plugins
           commit: 'chore: version packages'
           title: 'chore: version packages'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
