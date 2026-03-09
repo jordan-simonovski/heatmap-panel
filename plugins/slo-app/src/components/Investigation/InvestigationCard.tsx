@@ -1,8 +1,7 @@
 import React from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
-import { Badge, Button, Stack, Text, useStyles2 } from '@grafana/ui';
-import type { BadgeColor } from '@grafana/ui';
+import { Badge, Button, Stack, Text, useStyles2, type BadgeColor } from '@grafana/ui';
 
 interface BadgeItem {
   color: BadgeColor;

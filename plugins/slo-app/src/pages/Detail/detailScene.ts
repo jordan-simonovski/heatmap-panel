@@ -334,7 +334,7 @@ export function detailScene(slo: SLODefinition) {
           body: slo.type === 'latency'
             ? new VizPanel({
                 title: `Trace Latency Heatmap (${slo.route})`,
-                pluginId: 'heatmap-bubbles-panel',
+                pluginId: 'jordo-heatmap-bubbles-panel',
                 $data: drilldownQuery,
                 options: {
                   yAxisScale: 'log',
@@ -344,7 +344,7 @@ export function detailScene(slo: SLODefinition) {
               })
             : new VizPanel({
                 title: `Error Rate (${slo.route})`,
-                pluginId: 'timeseries-selection-panel',
+                pluginId: 'jordo-timeseries-selection-panel',
                 $data: drilldownQuery,
                 options: {
                   lineColor: '#e53935',

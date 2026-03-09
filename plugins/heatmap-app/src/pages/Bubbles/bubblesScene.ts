@@ -14,8 +14,7 @@ import {
   VizPanel,
 } from '@grafana/scenes';
 import { locationService } from '@grafana/runtime';
-import { CLICKHOUSE_DS } from '../../constants';
-import { ROUTES } from '../../constants';
+import { CLICKHOUSE_DS, ROUTES } from '../../constants';
 import { prefixRoute } from '../../utils/utils.routing';
 import { SelectionState } from '../../components/Bubbles/SelectionState';
 import { AttributeComparisonPanel } from '../../components/Bubbles/AttributeComparisonPanel';
@@ -186,7 +185,7 @@ export function bubblesScene(view: WorkbenchView = 'explorer') {
 
   const heatmapVizPanel = new VizPanel({
     title: PANEL_TITLES[currentMode()] ?? PANEL_TITLES.latency,
-    pluginId: 'heatmap-bubbles-panel',
+    pluginId: 'jordo-heatmap-bubbles-panel',
     options: {
       yAxisScale: 'log',
       colorScheme: 'blues',

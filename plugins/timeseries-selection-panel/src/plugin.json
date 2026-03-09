@@ -1,7 +1,7 @@
 {
   "type": "panel",
   "name": "Timeseries Selection",
-  "id": "timeseries-selection-panel",
+  "id": "jordo-timeseries-selection-panel",
   "info": {
     "keywords": ["timeseries", "selection", "brush", "comparison"],
     "description": "Timeseries line chart with horizontal brush selection for comparison analysis",

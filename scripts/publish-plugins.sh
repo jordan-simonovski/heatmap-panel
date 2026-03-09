@@ -46,12 +46,19 @@ for PLUGIN in "${PLUGINS[@]}"; do
     continue
   fi
 
-  # Sign the plugin dist folder
+  # Sign the plugin dist folder and surface actionable conflict errors.
   echo "    Signing plugin..."
-  (
-    cd "$PLUGIN_DIR"
-    GRAFANA_ACCESS_POLICY_TOKEN="$GRAFANA_ACCESS_POLICY_TOKEN" npm run sign
-  )
+  if SIGN_OUTPUT=$(cd "$PLUGIN_DIR" && GRAFANA_ACCESS_POLICY_TOKEN="$GRAFANA_ACCESS_POLICY_TOKEN" npm run sign 2>&1); then
+    printf '%s\n' "$SIGN_OUTPUT"
+  else
+    SIGN_EXIT=$?
+    printf '%s\n' "$SIGN_OUTPUT"
+    if [[ "$SIGN_OUTPUT" == *"status code 409"* ]]; then
+      echo "    Error: signing conflict for ${PLUGIN_ID} v${VERSION} (HTTP 409)." >&2
+      echo "    Fix: bump the plugin version and verify plugin ID ownership in Grafana Cloud." >&2
+    fi
+    exit "$SIGN_EXIT"
+  fi
 
   # Package: rename dist → plugin-id, zip, restore
   echo "    Creating zip archive ${PLUGIN_ID}-${VERSION}.zip..."
